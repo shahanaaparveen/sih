@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1">
+      <stop offset="0%" stop-color="#2b6cb0"/>
+      <stop offset="50%" stop-color="#f6e05e"/>
+      <stop offset="100%" stop-color="#e53e3e"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="#111" rx="6"/>
+  <g transform="translate(40,30)">
+    <rect width="720" height="390" rx="6" fill="url(#g)" opacity="0.95" />
+    <text x="360" y="200" fill="#fff" font-size="24" font-family="Arial" text-anchor="middle">Sample Depth Map (simulated)</text>
+  </g>
+</svg>

@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aero3D OnePass | Drone Video to 3D Model Pipeline</title>
+    <meta name="description" content="Single-Pass Drone Video to 3D Model Reconstruction Platform" />
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Three.js CDN for 3D Viewport Renderer -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link rel="stylesheet" href="assets/css/styles.css" />
+  </head>
+  <body>
+    <!-- Navigation Header -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <span class="brand-name">Aero<b>3D</b> <span class="brand-tag">ONEPASS</span></span>
+      </div>
+
+      <div class="top-status">
+        <div class="status-indicator">
+          <span class="pulse-dot"></span>
+          <span>GPU Server <b>ONLINE</b></span>
+        </div>
+        <div class="gpu-badge">
+          <span>NVIDIA RTX 4090</span>
+          <strong>24GB VRAM</strong>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <!-- Banner / Heading Section -->
+      <section class="page-heading">
+        <div>
+          <h1>Single-Pass Drone Video to 3D Model</h1>
+          <p class="subtitle">Upload drone footage or paste a video URL to generate high-precision 3D meshes and point clouds.</p>
+        </div>
+        <div class="heading-actions">
+          <button id="resetBtn" class="outline-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Reset Workspace
+          </button>
+          <button id="runAll" class="primary-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Start 3D Pipeline
+          </button>
+        </div>
+      </section>
+
+      <!-- Pipeline Execution Phase Tracker -->
+      <section class="phase-strip">
+        <div class="phases-track">
+          <!-- 01 Data Ingestion -->
+          <div class="phase done" data-phase="0">
+            <div class="phase-header">
+              <span class="phase-status">✓</span>
+              <span class="phase-num">01</span>
+            </div>
+            <div class="phase-info">
+              <b>Data Ingestion</b>
+              <small>Frame Demux &amp; Telemetry</small>
+            </div>
+          </div>
+
+          <!-- 02 Frame Preprocessing -->
+          <div class="phase done" data-phase="1">
+            <div class="phase-header">
+              <span class="phase-status">✓</span>
+              <span class="phase-num">02</span>
+            </div>
+            <div class="phase-info">
+              <b>Frame Preprocessing</b>
+              <small>Keyframe &amp; Deblur</small>
+            </div>
+          </div>
+
+          <!-- 03 Dynamic Object Purging -->
+          <div class="phase done" data-phase="2">
+            <div class="phase-header">
+              <span class="phase-status">✓</span>
+              <span class="phase-num">03</span>
+            </div>
+            <div class="phase-info">
+              <b>Dynamic Object Purging</b>
+              <small>AI Transient Filtering</small>
+            </div>
+          </div>
+
+          <!-- 04 Camera Pose + Depth -->
+          <div class="phase active" data-phase="3">
+            <div class="phase-header">
+              <span class="phase-status">●</span>
+              <span class="phase-num">04</span>
+            </div>
+            <div class="phase-info">
+              <b>Camera Pose + Depth</b>
+              <small>Depth Anything V2</small>
+            </div>
+          </div>
+
+          <!-- 05 Sensor Fusion -->
+          <div class="phase pending" data-phase="4">
+            <div class="phase-header">
+              <span class="phase-status">○</span>
+              <span class="phase-num">05</span>
+            </div>
+            <div class="phase-info">
+              <b>Sensor Fusion</b>
+              <small>IMU / GNSS Fusion</small>
+            </div>
+          </div>
+
+          <!-- 06 3D Reconstruction -->
+          <div class="phase pending" data-phase="5">
+            <div class="phase-header">
+              <span class="phase-status">○</span>
+              <span class="phase-num">06</span>
+            </div>
+            <div class="phase-info">
+              <b>3D Reconstruction</b>
+              <small>Mesh &amp; Texture</small>
+            </div>
+          </div>
+
+          <!-- 07 Georeferencing -->
+          <div class="phase pending" data-phase="6">
+            <div class="phase-header">
+              <span class="phase-status">○</span>
+              <span class="phase-num">07</span>
+            </div>
+            <div class="phase-info">
+              <b>Georeferencing</b>
+              <small>UTM / WGS84</small>
+            </div>
+          </div>
+
+          <!-- 08 Validation -->
+          <div class="phase pending" data-phase="7">
+            <div class="phase-header">
+              <span class="phase-status">○</span>
+              <span class="phase-num">08</span>
+            </div>
+            <div class="phase-info">
+              <b>Validation</b>
+              <small>GSD &amp; Quality QC</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pipeline Progress Bar -->
+        <div class="phase-progress-bar-wrap">
+          <div class="progress-info">
+            <div class="progress-meta">
+              <span class="progress-label">PIPELINE EXECUTION PROGRESS</span>
+            </div>
+            <strong id="progressValue">48%</strong>
+          </div>
+          <div class="progress-track">
+            <div id="progressBar" class="progress-fill" style="width: 48%;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Workspace Layout -->
+      <div class="workspace-grid">
+        <!-- Left Column: Video Input & Configuration -->
+        <div class="left-column">
+          <!-- Video Source Upload Box -->
+          <div class="panel">
+            <div class="panel-title">
+              <div>
+                <h2>1. Video Source</h2>
+                <p class="panel-sub">Upload local drone MP4/MOV video or paste video link</p>
+              </div>
+              <span id="inputStatus" class="status-pill idle">WAITING FOR INPUT</span>
+            </div>
+
+            <!-- Drag & Drop Zone -->
+            <div id="dropZone" class="drop-zone">
+              <div class="drop-icon">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <h3>Drag & Drop Drone Video File</h3>
+              <p>Supports MP4, MOV, AVI up to 4K resolution (Max 2GB)</p>
+              <label for="videoFile" class="primary-btn inline-btn">
+                Browse Files
+              </label>
+              <input id="videoFile" type="file" accept="video/*">
+            </div>
+
+            <div class="or-divider"><span>OR PASTE VIDEO URL</span></div>
+
+            <!-- URL Input Row -->
+            <div class="url-row">
+              <input id="videoUrl" type="url" placeholder="Paste video URL (e.g. https://example.com/video.mp4)" />
+              <button id="loadUrl" class="orange-btn">Load URL</button>
+            </div>
+
+            <!-- Quick Load Sample 4K Video -->
+            <div class="sample-prompt-row" style="margin-top: 12px; display: flex; align-items: center; justify-content: space-between; background: var(--bg-subtle); border: 1px dashed var(--navy-border); border-radius: 8px; padding: 10px 14px;">
+              <span style="font-size: 12px; color: var(--navy-muted); display: flex; align-items: center; gap: 8px; font-weight: 500;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--orange-primary)" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Local 4K Drone Sample Available (92.5 MB)
+              </span>
+              <button id="loadSampleBtn" type="button" class="outline-btn" style="padding: 4px 12px; font-size: 12px; height: 30px; font-weight: 600; cursor: pointer;">
+                Load Sample Video
+              </button>
+            </div>
+
+            <!-- GPS & Flight Metadata Card -->
+            <div id="metadataCard" class="metadata-card">
+              <div class="metadata-header">
+                <div class="metadata-title-wrap">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2a8 8 0 0 0-8 8c0 5.25 8 12 8 12s8-6.75 8-12a8 8 0 0 0-8-8z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                  </svg>
+                  <span>GPS &amp; Flight Metadata</span>
+                </div>
+              </div>
+
+              <!-- Placeholder state before video is loaded -->
+              <div id="metaEmptyState" class="meta-empty-state">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                  <polyline points="2 17 12 22 22 17"/>
+                  <polyline points="2 12 12 17 22 12"/>
+                </svg>
+                <p>Upload or paste a drone video above to automatically extract embedded GPS coordinates, camera specs, and flight telemetry.</p>
+              </div>
+
+              <!-- Dynamic Metadata Grid (populated when video is loaded with all 12 telemetry attributes) -->
+              <div id="metaGrid" class="meta-grid" style="display: none;">
+                <!-- 1. Timestamp -->
+                <div class="meta-item highlighted">
+                  <div class="meta-item-top">
+                    <span class="meta-label">1. TIMESTAMP (UTC)</span>
+                    <span class="meta-mini-badge">GPS TIME</span>
+                  </div>
+                  <strong id="metaTimestamp" class="meta-val">--</strong>
+                  <small id="metaTimecode" class="meta-sub">TC: -- · T+0.00s</small>
+                </div>
+
+                <!-- 2. Latitude -->
+                <div class="meta-item highlighted">
+                  <div class="meta-item-top">
+                    <span class="meta-label">2. LATITUDE</span>
+                    <span class="meta-mini-badge">WGS84</span>
+                  </div>
+                  <strong id="metaLat" class="meta-val">--</strong>
+                  <small id="metaLatDms" class="meta-sub">DMS: --</small>
+                </div>
+
+                <!-- 3. Longitude -->
+                <div class="meta-item highlighted">
+                  <div class="meta-item-top">
+                    <span class="meta-label">3. LONGITUDE</span>
+                    <span class="meta-mini-badge">UTM 43N</span>
+                  </div>
+                  <strong id="metaLng" class="meta-val">--</strong>
+                  <small id="metaLngDms" class="meta-sub">DMS: --</small>
+                </div>
+
+                <!-- 4. Altitude -->
+                <div class="meta-item">
+                  <div class="meta-item-top">
+                    <span class="meta-label">4. ALTITUDE (AGL / MSL)</span>
+                    <span class="meta-mini-badge">VERT DATUM</span>
+                  </div>
+                  <strong id="metaAlt" class="meta-val">--</strong>
+                  <small id="metaAltSub" class="meta-sub">MSL: -- · Baro: --</small>
+                </div>
+
+                <!-- 5. Video FPS & Resolution -->
+                <div class="meta-item">
+                  <div class="meta-item-top">
+                    <span class="meta-label">5. VIDEO FPS &amp; RESOLUTION</span>
+                    <span class="meta-mini-badge">CONTAINER</span>
+                  </div>
+                  <strong id="metaRes" class="meta-val">--</strong>
+                  <small id="metaFps" class="meta-sub">FPS: -- · Bitrate: --</small>
+                </div>
+
+                <!-- 6. Camera Intrinsics -->
+                <div class="meta-item">
+                  <div class="meta-item-top">
+                    <span class="meta-label">6. CAMERA INTRINSICS (K)</span>
+                    <button id="viewKMatrixBtn" type="button" class="meta-link-btn">View Matrix</button>
+                  </div>
+                  <strong id="metaIntrinsics" class="meta-val">--</strong>
+                  <small id="metaIntrinsicsSub" class="meta-sub">cx: --, cy: -- · 24mm F/2.8</small>
+                </div>
+
+                <!-- 7. Yaw, Pitch, Roll -->
+                <div class="meta-item">
+                  <div class="meta-item-top">
+                    <span class="meta-label">7. YAW / PITCH / ROLL</span>
+                    <span class="meta-mini-badge">EULER</span>
+                  </div>
+                  <strong id="metaEuler" class="meta-val">--</strong>
+                  <small id="metaEulerSub" class="meta-sub">Gimbal: -- · Heading: --</small>
+                </div>
+
+                <!-- 8. IMU (Inertial Measurement Unit) -->
+                <div class="meta-item">
+                  <div class="meta-item-top">
+                    <span class="meta-label">8. IMU (ACC &amp; GYRO)</span>
+                    <span class="meta-mini-badge">6-DOF</span>
+                  </div>
+                  <strong id="metaImu" class="meta-val">--</strong>
+                  <small id="metaImuSub" class="meta-sub">Gyro: --</small>
+                </div>
+
+                <!-- 9. Barometer -->
+                <div class="meta-item">
+                  <div class="meta-item-top">
+                    <span class="meta-label">9. BAROMETER</span>
+                    <span class="meta-mini-badge">PRESSURE</span>
+                  </div>
+                  <strong id="metaBaro" class="meta-val">--</strong>
+                  <small id="metaBaroSub" class="meta-sub">Temp: -- · Δh: ±0.1m</small>
+                </div>
+
+                <!-- 10. RTK / PPK Status -->
+                <div class="meta-item highlighted">
+                  <div class="meta-item-top">
+                    <span class="meta-label">10. RTK / PPK GNSS</span>
+                    <span class="meta-mini-badge rtk-fixed">RTK FIX</span>
+                  </div>
+                  <strong id="metaRtk" class="meta-val">--</strong>
+                  <small id="metaRtkSub" class="meta-sub">Acc: -- · Constellation: L1/L2</small>
+                </div>
+
+                <!-- 11. Velocity -->
+                <div class="meta-item">
+                  <div class="meta-item-top">
+                    <span class="meta-label">11. VELOCITY (GROUND &amp; 3D)</span>
+                    <span class="meta-mini-badge">KINEMATICS</span>
+                  </div>
+                  <strong id="metaVelocity" class="meta-val">--</strong>
+                  <small id="metaVelocitySub" class="meta-sub">Vectors: [Vn, Ve, Vd] m/s</small>
+                </div>
+
+                <!-- 12. Dynamic Telemetry Status -->
+                <div class="meta-item">
+                  <div class="meta-item-top">
+                    <span class="meta-label">12. TELEMETRY STREAM</span>
+                    <span id="telemetryLiveDot" class="pulse-dot" style="display:inline-block; width:7px; height:7px;"></span>
+                  </div>
+                  <strong id="metaSync" class="meta-val" style="color:var(--orange-primary);">LIVE SYNC READY</strong>
+                  <small id="metaSyncSub" class="meta-sub">Synchronized with video playback</small>
+                </div>
+              </div>
+
+              <!-- Telemetry Actions Bar -->
+              <div id="metaActionsBar" class="meta-actions-bar" style="display: none;">
+                <button id="syncMongoBtn" type="button" class="meta-action-btn" style="border-color: #10b981; color: #047857; background: #ecfdf5;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                  Sync to MongoDB
+                </button>
+                <button id="exportTelemetryJson" type="button" class="meta-action-btn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Export JSON
+                </button>
+                <button id="exportTelemetryCsv" type="button" class="meta-action-btn">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                  Export CSV
+                </button>
+              </div>
+            </div>
+
+            <!-- Video Player Preview Container -->
+            <div id="videoContainer" class="video-preview-wrapper" style="display:none;">
+              <div class="preview-header">
+                <span>Loaded Video Stream</span>
+                <span id="fileName" class="file-name-tag">video.mp4</span>
+              </div>
+              <video id="videoPreview" class="video-preview" controls preload="metadata" poster="assets/media/extracted_frame.jpg"></video>
+              
+              <!-- Video Frame Extraction Toolbar -->
+              <div class="video-extract-toolbar">
+                <div class="timecode-display">
+                  <span class="pulse-dot-sm"></span>
+                  <span>Timecode: <strong id="videoTimecodeLive">00:04.50</strong></span>
+                </div>
+                <div class="extract-btn-group">
+                  <button id="stepBackSec" type="button" class="outline-btn sm-btn" title="Step back 1 second">◀ -1s</button>
+                  <button id="extractVideoFrameBtn" type="button" class="primary-btn sm-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    Extract Frame ➔ Show 3D Nearby
+                  </button>
+                  <button id="stepForwardSec" type="button" class="outline-btn sm-btn" title="Step forward 1 second">+1s ▶</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reconstruction Parameters -->
+          <div class="panel">
+            <div class="panel-title">
+              <h2>2. Pipeline Configuration</h2>
+              <span class="badge-navy">AI ENGINE V2.4</span>
+            </div>
+
+            <div class="preset-group">
+              <label class="field-label">Reconstruction Quality Preset</label>
+              <div class="preset-row">
+                <button class="preset" data-preset="fast">
+                  <b>Fast Draft</b>
+                  <small>Low res mesh for rapid survey</small>
+                </button>
+                <button class="preset selected" data-preset="balanced">
+                  <b>Balanced 3D</b>
+                  <small>Recommended 4K detail level</small>
+                </button>
+              </div>
+            </div>
+
+            <div class="config-options">
+              <div class="slider-row">
+                <div>
+                  <b>Frame Extraction Density</b>
+                  <small id="densityLabel">Balanced · 12 frames / minute</small>
+                </div>
+                <input id="density" type="range" min="1" max="5" value="3">
+              </div>
+
+              <div class="toggle-row">
+                <div>
+                  <b>AI Dynamic Object Masking</b>
+                  <small>Removes moving cars & people from 3D model</small>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" checked>
+                  <i class="slider-toggle"></i>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: 3D Viewport & Output -->
+        <div class="right-column">
+          <!-- 3D Interactive Viewer -->
+          <div class="panel viewport-panel">
+            <div class="panel-title">
+              <div>
+                <h2>3. Interactive 3D Model Viewport</h2>
+                <p class="panel-sub">Real-time WebGL photogrammetry & mesh renderer</p>
+              </div>
+              <div class="view-actions">
+                <button class="view-btn active" data-view="3d">Orbit 3D</button>
+                <button class="view-btn" data-view="top">Top View</button>
+                <button class="view-btn" data-view="front">Front View</button>
+              </div>
+            </div>
+
+            <!-- Mode Switcher: Extracted Frame ➔ 3D Model (Nearby) vs Full Flight Scene -->
+            <div class="viewport-mode-switcher">
+              <button id="modeDualView" class="mode-tab active" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                📸 Extracted Frame &amp; 3D Model (Nearby)
+              </button>
+              <button id="modeFullScene" class="mode-tab" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                🌐 Full Flight Trajectory Scene
+              </button>
+            </div>
+
+            <!-- DUAL VIEW: Extracted Video Frame (2D) & Nearby Reconstructed 3D Model -->
+            <div id="frameTo3dDualContainer" class="frame-to-3d-container">
+              <!-- Left Window: Extracted 2D Video Frame -->
+              <div class="frame-box">
+                <div class="frame-box-header">
+                  <div class="frame-box-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--orange-primary)" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    <span>Extracted Video Frame (2D)</span>
+                  </div>
+                  <span id="extractedFrameBadge" class="frame-badge">FRAME #135 · T+04.50s</span>
+                </div>
+
+                <div class="frame-canvas-wrap">
+                  <canvas id="frame2dCanvas" width="640" height="360"></canvas>
+                  <div id="frameOverlayTag" class="frame-overlay-tag">RGB CAMERA SENSOR</div>
+                  <div id="frameKeypointBadge" class="frame-sub-tag">64 FEATURE POINTS</div>
+                </div>
+
+                <div class="frame-box-footer">
+                  <div class="frame-mode-btns">
+                    <button class="ghost-btn active" data-framemode="rgb" type="button">RGB Frame</button>
+                    <button class="ghost-btn" data-framemode="depth" type="button">AI Depth Map</button>
+                    <button class="ghost-btn" data-framemode="keypoints" type="button">ORB Keypoints</button>
+                  </div>
+                  <button id="quickExtractBtn" class="primary-btn sm-btn" type="button" title="Capture current frame from video">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    Capture Now
+                  </button>
+                </div>
+              </div>
+
+              <!-- Right Window: Corresponding 3D Model (Nearby!) -->
+              <div class="frame-box">
+                <div class="frame-box-header">
+                  <div class="frame-box-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--orange-primary)" stroke-width="2.2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                    <span>Reconstructed 3D Model (Nearby)</span>
+                  </div>
+                  <span class="frame-badge green">WEBGL 3D SURFACE</span>
+                </div>
+
+                <div class="frame-canvas-wrap" id="frame3dWrap">
+                  <canvas id="frame3dCanvas"></canvas>
+                  <div class="frame-3d-hint">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+                    Drag to Orbit · Scroll to Zoom
+                  </div>
+                </div>
+
+                <div class="frame-box-footer">
+                  <div class="frame-mode-btns">
+                    <button class="ghost-btn active" data-layer3d="textured" type="button">Textured 3D</button>
+                    <button class="ghost-btn" data-layer3d="points" type="button">Point Cloud</button>
+                    <button class="ghost-btn" data-layer3d="wire" type="button">Wireframe</button>
+                  </div>
+                  <div class="depth-slider-wrap">
+                    <label for="depthScaleRange">3D Relief:</label>
+                    <input id="depthScaleRange" type="range" min="0" max="25" value="12" step="1">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Viewport Canvas Container (Full Scene) -->
+            <div id="viewport" class="viewport" style="display: none;">
+              <canvas id="sceneCanvas"></canvas>
+              
+              <div class="viewport-overlay">
+                <div>FPS: <span id="fpsCounter">60</span> | POINTS: 485,210</div>
+                <div>WGS84 UTM 43N</div>
+              </div>
+
+              <div class="scale-ruler">
+                <i></i>
+                <span>5 meters</span>
+              </div>
+            </div>
+
+            <!-- Render Layer Toggles -->
+            <div class="layer-bar">
+              <button class="layer active" data-layer="solid">Solid Mesh</button>
+              <button class="layer" data-layer="wire">Wireframe</button>
+              <button class="layer" data-layer="heat">Depth Heatmap</button>
+              <button class="layer" data-layer="path">Drone Flight Path</button>
+            </div>
+
+            <!-- Metric Summary -->
+            <div class="metrics">
+              <div>
+                <strong>42</strong>
+                <small>Keyframes</small>
+              </div>
+              <div>
+                <strong>1.4 cm</strong>
+                <small>GSD Accuracy</small>
+              </div>
+              <div>
+                <strong>485K</strong>
+                <small>3D Vertices</small>
+              </div>
+              <div>
+                <strong>99.4%</strong>
+                <small>Overlap Score</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom Grid: Log Terminal & Downloads -->
+          <div class="bottom-grid">
+            <!-- Execution Terminal -->
+            <div class="panel console-panel">
+              <div class="panel-title">
+                <h2>Execution Logs</h2>
+                <button id="clearLogs" class="ghost-btn">Clear Log</button>
+              </div>
+              <div id="terminal" class="terminal">
+                <div class="log-line"><span class="log-time">[SYSTEM]</span> Engine initialized · Worker thread ready</div>
+                <div class="log-line"><span class="log-time">[SYSTEM]</span> Awaiting drone video source input...</div>
+              </div>
+            </div>
+
+            <!-- Deliverable Exports -->
+            <div class="panel export-panel">
+              <div class="panel-title">
+                <div>
+                  <h2>Deliverables</h2>
+                  <p class="panel-sub">Export processed 3D data formats</p>
+                </div>
+                <span id="exportCount" class="export-count">READY</span>
+              </div>
+
+              <div class="export-list">
+                <button class="export-btn" data-format="glb">
+                  <span class="file-type glb">GLB</span>
+                  <div>
+                    <b>3D Mesh Model</b>
+                    <small>Textured binary 3D</small>
+                  </div>
+                  <strong>↓</strong>
+                </button>
+                <button class="export-btn" data-format="las">
+                  <span class="file-type las">LAS</span>
+                  <div>
+                    <b>Point Cloud</b>
+                    <small>LiDAR / Dense points</small>
+                  </div>
+                  <strong>↓</strong>
+                </button>
+                <button class="export-btn" data-format="obj">
+                  <span class="file-type obj">OBJ</span>
+                  <div>
+                    <b>Wavefront OBJ</b>
+                    <small>CAD / Blender mesh</small>
+                  </div>
+                  <strong>↓</strong>
+                </button>
+                <button class="export-btn" data-format="tif">
+                  <span class="file-type tif">GeoTiff</span>
+                  <div>
+                    <b>Orthomosaic</b>
+                    <small>GIS Map tile layer</small>
+                  </div>
+                  <strong>↓</strong>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+      <div class="container footer-content">
+        <div>&copy; 2026 Aero3D OnePass — Smart India Hackathon Prototype</div>
+        <div>Built with <b>Three.js WebGL</b> & <b>Depth Anything V2</b> AI Model</div>
+      </div>
+    </footer>
+
+    <!-- Camera Intrinsics K-Matrix Modal Dialog -->
+    <div id="intrinsicsModal" class="modal-backdrop" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--orange-primary)" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg>
+            <h3>Camera Calibration &amp; Intrinsics (K-Matrix)</h3>
+          </div>
+          <button id="closeIntrinsicsModal" type="button" class="modal-close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-desc">Pinhole camera model parameters &amp; lens distortion coefficients calibrated for photogrammetric 3D bundle adjustment and Structure-from-Motion (SfM).</p>
+
+          <!-- 3x3 K-Matrix Visualizer -->
+          <div class="matrix-box">
+            <div class="matrix-label">INTRINSIC MATRIX K (3×3)</div>
+            <div class="matrix-grid">
+              <span class="bracket left">[</span>
+              <div class="matrix-cells">
+                <div class="matrix-row">
+                  <span class="cell active" id="matFx">fx: 3125.4</span>
+                  <span class="cell">s: 0.000</span>
+                  <span class="cell active" id="matCx">cx: 1920.0</span>
+                </div>
+                <div class="matrix-row">
+                  <span class="cell">0.000</span>
+                  <span class="cell active" id="matFy">fy: 3125.4</span>
+                  <span class="cell active" id="matCy">cy: 1080.0</span>
+                </div>
+                <div class="matrix-row">
+                  <span class="cell">0.000</span>
+                  <span class="cell">0.000</span>
+                  <span class="cell">1.000</span>
+                </div>
+              </div>
+              <span class="bracket right">]</span>
+            </div>
+          </div>
+
+          <!-- Distortion Parameters & Sensor Grid -->
+          <div class="modal-specs-grid">
+            <div class="spec-card">
+              <span class="spec-tag">RADIAL DISTORTION</span>
+              <strong id="matRadial">k₁: -0.0428 · k₂: +0.0156</strong>
+              <small>Brown-Conrady Polynomial (k₃: 0.0)</small>
+            </div>
+            <div class="spec-card">
+              <span class="spec-tag">TANGENTIAL DISTORTION</span>
+              <strong id="matTangential">p₁: +0.00018 · p₂: -0.00009</strong>
+              <small>Decentering decentration vector</small>
+            </div>
+            <div class="spec-card">
+              <span class="spec-tag">SENSOR DIMENSIONS</span>
+              <strong id="matSensorDim">13.20 × 8.80 mm (1" CMOS)</strong>
+              <small id="matPixelPitch">Pixel Pitch: 3.438 µm · Aspect: 16:9</small>
+            </div>
+            <div class="spec-card">
+              <span class="spec-tag">FIELD OF VIEW (FOV)</span>
+              <strong id="matFov">H: 73.7° · V: 53.1° · D: 84.0°</strong>
+              <small id="matFocalEquiv">24.0 mm (35mm format equiv)</small>
+            </div>
+          </div>
+
+          <!-- OpenCV / COLMAP Export snippet -->
+          <div class="code-snippet-box">
+            <div class="snippet-header">
+              <span>OpenCV / COLMAP PINHOLE FORMAT</span>
+              <button id="copyIntrinsicsBtn" type="button" class="snippet-copy-btn">Copy Format</button>
+            </div>
+            <pre id="intrinsicsCodeBlock" class="snippet-code">PINHOLE 3840 2160 3125.42 3125.42 1920.0 1080.0
+k1=-0.04281 k2=0.01562 p1=0.00018 p2=-0.00009</pre>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="doneIntrinsicsModal" type="button" class="primary-btn inline-btn">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="assets/js/app.js"></script>
+  </body>
+</html>
