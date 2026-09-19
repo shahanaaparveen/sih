@@ -1,10 +1,22 @@
 import os
+import sys
 import json
 from datetime import datetime
-from flask import Flask, request, jsonify, send_from_directory
+
+# Configure UTF-8 encoding on Windows console to support emoji print statements
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 import pymongo
 from bson import ObjectId
+import cv2
 
 # Initialize Flask Application
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -94,6 +106,258 @@ def api_health():
             "mongodb_connected": False,
             "message": "MongoDB not reachable on localhost:27017"
         }), 503
+
+# Uploaded Video Storage & Active Pipeline State
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ACTIVE_VIDEO_PATH = None
+
+def get_active_video_path():
+    global ACTIVE_VIDEO_PATH
+    if ACTIVE_VIDEO_PATH and os.path.exists(ACTIVE_VIDEO_PATH):
+        return ACTIVE_VIDEO_PATH
+    # Check if there are user uploaded video files in uploads folder
+    if os.path.exists(UPLOAD_FOLDER):
+        files = [
+            os.path.join(UPLOAD_FOLDER, f)
+            for f in os.listdir(UPLOAD_FOLDER)
+            if f.lower().endswith(('.mp4', '.mov', '.avi', '.mkv'))
+        ]
+        if files:
+            files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            ACTIVE_VIDEO_PATH = files[0]
+            return ACTIVE_VIDEO_PATH
+    return None
+
+# Route to serve uploaded videos securely
+@app.route("/uploads/<path:filename>")
+def serve_uploaded_file(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
+# API: Upload Drone Video File (Multipart Form-Data)
+@app.route("/api/video/upload", methods=["POST"])
+def upload_drone_video():
+    global ACTIVE_VIDEO_PATH
+    if "video" not in request.files:
+        return jsonify({"success": False, "error": "No video file found in request"}), 400
+
+    file = request.files["video"]
+    if not file or file.filename == "":
+        return jsonify({"success": False, "error": "No selected file"}), 400
+
+    safe_name = secure_filename(file.filename) or "uploaded_drone_video.mp4"
+    save_path = os.path.join(UPLOAD_FOLDER, safe_name)
+    file.save(save_path)
+    ACTIVE_VIDEO_PATH = save_path
+
+    cap = cv2.VideoCapture(save_path)
+    if not cap.isOpened():
+        print("❌ Video could not be opened")
+        return jsonify({
+            "success": False,
+            "status": "failed",
+            "message": "❌ Video could not be opened",
+            "error": "Video could not be opened with OpenCV"
+        }), 400
+    else:
+        fps = cap.get(cv2.CAP_PROP_FPS) or 29.97
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        duration = (total_frames / fps) if fps > 0 else 0.0
+
+        print("✅ Video opened successfully", flush=True)
+        print("--------------------------------", flush=True)
+        print("Resolution   :", width, "x", height, flush=True)
+        print("FPS          :", round(fps, 2), flush=True)
+        print("Total frames :", total_frames, flush=True)
+        print("Duration     :", round(duration, 2), "seconds", flush=True)
+        cap.release()
+
+    size_bytes = os.path.getsize(save_path)
+
+    return jsonify({
+        "success": True,
+        "status": "opened_successfully",
+        "message": "✅ Video opened successfully",
+        "filename": safe_name,
+        "video_url": f"/uploads/{safe_name}",
+        "width": width,
+        "height": height,
+        "resolution": f"{width} x {height}",
+        "fps": round(fps, 2),
+        "total_frames": total_frames,
+        "duration": round(duration, 2),
+        "duration_sec": round(duration, 2),
+        "size_bytes": size_bytes,
+        "size_mb": round(size_bytes / (1024 * 1024), 2)
+    }), 200
+
+# API: OpenCV Video Metadata & Frame Sharpness for Uploaded Video
+@app.route("/api/video/metadata", methods=["GET"])
+def get_video_metadata():
+    video_file = get_active_video_path()
+    if not video_file:
+        return jsonify({"success": False, "error": "No drone video uploaded yet. Please upload a video first."}), 404
+
+    cap = cv2.VideoCapture(video_file)
+    if not cap.isOpened():
+        print("❌ Video could not be opened")
+        return jsonify({
+            "success": False,
+            "status": "failed",
+            "message": "❌ Video could not be opened",
+            "error": "Could not open active video"
+        }), 500
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 29.97
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    duration = (total_frames / fps) if fps > 0 else 0.0
+    cap.release()
+
+    filename = os.path.basename(video_file)
+    return jsonify({
+        "success": True,
+        "status": "opened_successfully",
+        "message": "✅ Video opened successfully",
+        "video_path": filename,
+        "filename": filename,
+        "width": width,
+        "height": height,
+        "resolution": f"{width} x {height}",
+        "fps": round(fps, 2),
+        "total_frames": total_frames,
+        "duration": round(duration, 2),
+        "duration_sec": round(duration, 2)
+    })
+
+@app.route("/api/video/frame_image", methods=["GET"])
+def get_video_frame_image():
+    video_file = get_active_video_path()
+    if not video_file:
+        return jsonify({"error": "No drone video uploaded yet."}), 404
+
+    frame_num = int(request.args.get("frame", 0))
+    target_width = int(request.args.get("width", 960))
+
+    cap = cv2.VideoCapture(video_file)
+    if not cap.isOpened():
+        return jsonify({"error": "Could not open video"}), 500
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total_frames > 0:
+        frame_num = max(0, min(frame_num, total_frames - 1))
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret or frame is None:
+        return jsonify({"error": "Could not read frame"}), 404
+
+    if target_width > 0 and frame.shape[1] > target_width:
+        h, w = frame.shape[:2]
+        new_h = int(h * (target_width / w))
+        frame = cv2.resize(frame, (target_width, new_h), interpolation=cv2.INTER_AREA)
+
+    success, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if not success:
+        return jsonify({"error": "Failed to encode frame"}), 500
+
+    return Response(buffer.tobytes(), mimetype="image/jpeg")
+
+@app.route("/api/video/frame_info", methods=["GET"])
+def get_frame_info():
+    video_file = get_active_video_path()
+    if not video_file:
+        return jsonify({"error": "No drone video uploaded yet."}), 404
+
+    frame_num = int(request.args.get("frame", 0))
+
+    cap = cv2.VideoCapture(video_file)
+    if not cap.isOpened():
+        return jsonify({"error": "Could not open video"}), 500
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 29.97
+
+    if total_frames > 0:
+        frame_num = max(0, min(frame_num, total_frames - 1))
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret or frame is None:
+        return jsonify({"error": "Could not read frame"}), 500
+
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    sharpness = round(float(cv2.Laplacian(gray, cv2.CV_64F).var()), 2)
+    timestamp = round(float(frame_num / fps), 2)
+
+    return jsonify({
+        "success": True,
+        "frame_number": frame_num + 1,
+        "frame_index": frame_num,
+        "total_frames": total_frames,
+        "fps": round(fps, 3),
+        "timestamp": timestamp,
+        "timestamp_sec": timestamp,
+        "sharpness": sharpness
+    })
+
+@app.route("/api/video/keyframes", methods=["GET"])
+def get_video_keyframes():
+    video_file = get_active_video_path()
+    if not video_file:
+        return jsonify({"error": "No drone video uploaded yet."}), 404
+
+    count = int(request.args.get("count", 10))
+    cap = cv2.VideoCapture(video_file)
+    if not cap.isOpened():
+        return jsonify({"error": "Could not open video"}), 500
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS) or 29.97
+
+    if total_frames <= count:
+        indices = list(range(total_frames))
+    elif count > 1:
+        step = (total_frames - 1) / (count - 1)
+        indices = [int(round(i * step)) for i in range(count)]
+    else:
+        indices = [0]
+
+    keyframes = []
+    for idx in indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if ret and frame is not None:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            sharpness = round(float(cv2.Laplacian(gray, cv2.CV_64F).var()), 2)
+        else:
+            sharpness = 100.0
+
+        timestamp = round(float(idx / fps), 2)
+        keyframes.append({
+            "frame_number": idx + 1,
+            "frame_index": idx,
+            "timestamp": timestamp,
+            "timestamp_sec": timestamp,
+            "sharpness": sharpness,
+            "image_url": f"/api/video/frame_image?frame={idx}&width=360"
+        })
+
+    cap.release()
+    return jsonify({
+        "success": True,
+        "total_keyframes": len(keyframes),
+        "total_video_frames": total_frames,
+        "fps": round(fps, 3),
+        "keyframes": keyframes
+    })
 
 # API: Save Ingested Drone Video & Telemetry (12 Attributes)
 @app.route("/api/telemetry", methods=["POST"])

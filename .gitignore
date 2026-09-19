@@ -9,8 +9,24 @@ ENV/
 # Large test media binaries (>50MB)
 assets/media/sample_4k.mp4
 
+# Uploads & temporary video/frame storage
+uploads/*
+!uploads/.gitkeep
+backend/storage/videos/*
+!backend/storage/videos/.gitkeep
+backend/storage/frames/*
+!backend/storage/frames/.gitkeep
+backend/storage/keyframes/*
+!backend/storage/keyframes/.gitkeep
+backend/storage/trajectories/*
+!backend/storage/trajectories/.gitkeep
+backend/storage/*.json
+backend/storage/**/*.json
+
+
 # OS & IDE
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+

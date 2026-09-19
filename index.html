@@ -8,7 +8,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Three.js CDN for 3D Viewport Renderer -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <link rel="stylesheet" href="assets/css/styles.css" />
@@ -24,17 +24,6 @@
         </div>
         <span class="brand-name">Aero<b>3D</b> <span class="brand-tag">ONEPASS</span></span>
       </div>
-
-      <div class="top-status">
-        <div class="status-indicator">
-          <span class="pulse-dot"></span>
-          <span>GPU Server <b>ONLINE</b></span>
-        </div>
-        <div class="gpu-badge">
-          <span>NVIDIA RTX 4090</span>
-          <strong>24GB VRAM</strong>
-        </div>
-      </div>
     </header>
 
     <main class="app-shell">
@@ -42,181 +31,658 @@
       <section class="page-heading">
         <div>
           <h1>Single-Pass Drone Video to 3D Model</h1>
-          <p class="subtitle">Upload drone footage or paste a video URL to generate high-precision 3D meshes and point clouds.</p>
         </div>
         <div class="heading-actions">
           <button id="resetBtn" class="outline-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             Reset Workspace
           </button>
-          <button id="runAll" class="primary-btn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Start 3D Pipeline
-          </button>
         </div>
       </section>
 
-      <!-- Pipeline Execution Phase Tracker -->
-      <section class="phase-strip">
-        <div class="phases-track">
-          <!-- 01 Data Ingestion -->
-          <div class="phase done" data-phase="0">
-            <div class="phase-header">
-              <span class="phase-status">✓</span>
-              <span class="phase-num">01</span>
-            </div>
-            <div class="phase-info">
-              <b>Data Ingestion</b>
-              <small>Frame Demux &amp; Telemetry</small>
-            </div>
-          </div>
+      <!-- DASHBOARD SHELL: Left Panel + Workspace Content Area -->
+      <div class="dashboard-shell">
+        <!-- LEFT PANEL (Workflow Navigation) -->
+        <aside class="dashboard-sidebar" id="dashboardSidebar">
+          <div class="sidebar-workflow-heading">WORKFLOW</div>
 
-          <!-- 02 Frame Preprocessing -->
-          <div class="phase done" data-phase="1">
-            <div class="phase-header">
-              <span class="phase-status">✓</span>
-              <span class="phase-num">02</span>
-            </div>
-            <div class="phase-info">
-              <b>Frame Preprocessing</b>
-              <small>Keyframe &amp; Deblur</small>
-            </div>
-          </div>
-
-          <!-- 03 Dynamic Object Purging -->
-          <div class="phase done" data-phase="2">
-            <div class="phase-header">
-              <span class="phase-status">✓</span>
-              <span class="phase-num">03</span>
-            </div>
-            <div class="phase-info">
-              <b>Dynamic Object Purging</b>
-              <small>AI Transient Filtering</small>
-            </div>
-          </div>
-
-          <!-- 04 Camera Pose + Depth -->
-          <div class="phase active" data-phase="3">
-            <div class="phase-header">
-              <span class="phase-status">●</span>
-              <span class="phase-num">04</span>
-            </div>
-            <div class="phase-info">
-              <b>Camera Pose + Depth</b>
-              <small>Depth Anything V2</small>
-            </div>
-          </div>
-
-          <!-- 05 Sensor Fusion -->
-          <div class="phase pending" data-phase="4">
-            <div class="phase-header">
-              <span class="phase-status">○</span>
-              <span class="phase-num">05</span>
-            </div>
-            <div class="phase-info">
-              <b>Sensor Fusion</b>
-              <small>IMU / GNSS Fusion</small>
-            </div>
-          </div>
-
-          <!-- 06 3D Reconstruction -->
-          <div class="phase pending" data-phase="5">
-            <div class="phase-header">
-              <span class="phase-status">○</span>
-              <span class="phase-num">06</span>
-            </div>
-            <div class="phase-info">
-              <b>3D Reconstruction</b>
-              <small>Mesh &amp; Texture</small>
-            </div>
-          </div>
-
-          <!-- 07 Georeferencing -->
-          <div class="phase pending" data-phase="6">
-            <div class="phase-header">
-              <span class="phase-status">○</span>
-              <span class="phase-num">07</span>
-            </div>
-            <div class="phase-info">
-              <b>Georeferencing</b>
-              <small>UTM / WGS84</small>
-            </div>
-          </div>
-
-          <!-- 08 Validation -->
-          <div class="phase pending" data-phase="7">
-            <div class="phase-header">
-              <span class="phase-status">○</span>
-              <span class="phase-num">08</span>
-            </div>
-            <div class="phase-info">
-              <b>Validation</b>
-              <small>GSD &amp; Quality QC</small>
-            </div>
-          </div>
-        </div>
-
-        <!-- Pipeline Progress Bar -->
-        <div class="phase-progress-bar-wrap">
-          <div class="progress-info">
-            <div class="progress-meta">
-              <span class="progress-label">PIPELINE EXECUTION PROGRESS</span>
-            </div>
-            <strong id="progressValue">48%</strong>
-          </div>
-          <div class="progress-track">
-            <div id="progressBar" class="progress-fill" style="width: 48%;"></div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Main Workspace Layout -->
-      <div class="workspace-grid">
-        <!-- Left Column: Video Input & Configuration -->
-        <div class="left-column">
-          <!-- Video Source Upload Box -->
-          <div class="panel">
-            <div class="panel-title">
-              <div>
-                <h2>1. Video Source</h2>
-                <p class="panel-sub">Upload local drone MP4/MOV video or paste video link</p>
+          <nav class="sidebar-workflow-nav">
+            <!-- 1. Dashboard -->
+            <button type="button" class="workflow-nav-item active" data-module="dashboard" id="navBtnDashboard">
+              <div class="workflow-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+                  <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+                  <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+                </svg>
               </div>
-              <span id="inputStatus" class="status-pill idle">WAITING FOR INPUT</span>
-            </div>
+              <span class="workflow-nav-text">Dashboard</span>
+            </button>
 
-            <!-- Drag & Drop Zone -->
-            <div id="dropZone" class="drop-zone">
-              <div class="drop-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <!-- 2. Projects -->
+            <button type="button" class="workflow-nav-item" data-module="projects" id="navBtnProjects">
+              <div class="workflow-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
               </div>
-              <h3>Drag & Drop Drone Video File</h3>
-              <p>Supports MP4, MOV, AVI up to 4K resolution (Max 2GB)</p>
-              <label for="videoFile" class="primary-btn inline-btn">
-                Browse Files
-              </label>
-              <input id="videoFile" type="file" accept="video/*">
+              <span class="workflow-nav-text">Projects</span>
+              <span class="projects-count-pill" id="projectsCountBadge">0</span>
+            </button>
+
+            <!-- 3. Upload Video -->
+            <button type="button" class="workflow-nav-item" data-module="upload-video" id="navBtnUploadVideo">
+              <div class="workflow-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+                  <polyline points="7 9 12 4 17 9"/>
+                  <line x1="12" y1="4" x2="12" y2="16"/>
+                </svg>
+              </div>
+              <span class="workflow-nav-text">Upload Video</span>
+            </button>
+
+            <!-- 3. Video Processing -->
+            <button type="button" class="workflow-nav-item" data-module="video-processing" id="navBtnVideoProcessing">
+              <div class="workflow-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                  <line x1="7" y1="2" x2="7" y2="22"/>
+                  <line x1="17" y1="2" x2="17" y2="22"/>
+                  <line x1="2" y1="12" x2="22" y2="12"/>
+                  <line x1="2" y1="7" x2="7" y2="7"/>
+                  <line x1="2" y1="17" x2="7" y2="17"/>
+                  <line x1="17" y1="17" x2="22" y2="17"/>
+                  <line x1="17" y1="7" x2="22" y2="7"/>
+                </svg>
+              </div>
+              <span class="workflow-nav-text">Video Processing</span>
+            </button>
+
+            <!-- 4. Trajectory -->
+            <button type="button" class="workflow-nav-item" data-module="trajectory" id="navBtnTrajectory">
+              <div class="workflow-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="6" cy="19" r="3"/>
+                  <path d="M9 19h8.5a4.5 4.5 0 0 0 0-9H7.5a3.5 3.5 0 0 1 0-7H18"/>
+                  <polyline points="15 6 18 3 21 6"/>
+                </svg>
+              </div>
+              <span class="workflow-nav-text">Trajectory</span>
+            </button>
+
+            <!-- 5. AI Depth Estimation -->
+            <button type="button" class="workflow-nav-item" data-module="depth-estimation" id="navBtnDepthEstimation">
+              <div class="workflow-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                  <polyline points="2 17 12 22 22 17"/>
+                  <polyline points="2 12 12 17 22 12"/>
+                </svg>
+              </div>
+              <span class="workflow-nav-text">AI Depth Estimation</span>
+            </button>
+
+            <!-- 6. Georeferencing -->
+            <button type="button" class="workflow-nav-item" data-module="georeferencing" id="navBtnGeoreferencing">
+              <div class="workflow-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="2" y1="12" x2="22" y2="12"/>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+              </div>
+              <span class="workflow-nav-text">Georeferencing</span>
+            </button>
+
+            <!-- 7. 3D Model Generation -->
+            <button type="button" class="workflow-nav-item" data-module="3d-generation" id="navBtn3dGeneration">
+              <div class="workflow-icon-circle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                  <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+              </div>
+              <span class="workflow-nav-text">3D Model Generation</span>
+            </button>
+          </nav>
+        </aside>
+
+        <!-- DASHBOARD MAIN WORKSPACE AREA -->
+        <div class="dashboard-main-area" id="dashboardMainArea" data-active-view="dashboard">
+          
+          <!-- Phase Strip Tracker & Live Pipeline Progress (Hidden from Dashboard) -->
+          <section class="phase-strip" id="phaseStrip" style="display: none !important;">
+            <div class="phase-progress-bar-wrap">
+              <div class="progress-info">
+                <div class="progress-meta">
+                  <span class="progress-label">PIPELINE EXECUTION PROGRESS</span>
+                  <span class="progress-current-stage" id="currentStageLabel">Stage 01 · Data Ingestion</span>
+                  <span id="inputStatus" class="status-pill ready">READY</span>
+                </div>
+                <strong id="progressValue">0%</strong>
+              </div>
+              <div class="progress-track">
+                <div id="progressBar" class="progress-fill" style="width: 0%;"></div>
+              </div>
             </div>
 
-            <div class="or-divider"><span>OR PASTE VIDEO URL</span></div>
+            <div class="phases-track">
+              <div class="phase pending" data-phase="0">
+                <div class="phase-header">
+                  <span class="phase-num">01</span>
+                  <span class="phase-status">○</span>
+                </div>
+                <div class="phase-info">
+                  <b>Ingestion</b>
+                  <small>4K Video &amp; Telemetry</small>
+                </div>
+              </div>
+              <div class="phase pending" data-phase="1">
+                <div class="phase-header">
+                  <span class="phase-num">02</span>
+                  <span class="phase-status">○</span>
+                </div>
+                <div class="phase-info">
+                  <b>Preprocessing</b>
+                  <small>Keyframe Extraction</small>
+                </div>
+              </div>
+              <div class="phase pending" data-phase="2">
+                <div class="phase-header">
+                  <span class="phase-num">03</span>
+                  <span class="phase-status">○</span>
+                </div>
+                <div class="phase-info">
+                  <b>Object Purging</b>
+                  <small>AI Dynamic Masking</small>
+                </div>
+              </div>
+              <div class="phase pending" data-phase="3">
+                <div class="phase-header">
+                  <span class="phase-num">04</span>
+                  <span class="phase-status">○</span>
+                </div>
+                <div class="phase-info">
+                  <b>Pose &amp; Depth</b>
+                  <small>Depth Anything V2</small>
+                </div>
+              </div>
+              <div class="phase pending" data-phase="4">
+                <div class="phase-header">
+                  <span class="phase-num">05</span>
+                  <span class="phase-status">○</span>
+                </div>
+                <div class="phase-info">
+                  <b>Sensor Fusion</b>
+                  <small>RTK GNSS + IMU + Depth</small>
+                </div>
+              </div>
+              <div class="phase pending" data-phase="5">
+                <div class="phase-header">
+                  <span class="phase-num">06</span>
+                  <span class="phase-status">○</span>
+                </div>
+                <div class="phase-info">
+                  <b>3D Reconstruction</b>
+                  <small>Poisson Dense Mesh</small>
+                </div>
+              </div>
+              <div class="phase pending" data-phase="6">
+                <div class="phase-header">
+                  <span class="phase-num">07</span>
+                  <span class="phase-status">○</span>
+                </div>
+                <div class="phase-info">
+                  <b>Georeferencing</b>
+                  <small>WGS84 UTM 43N</small>
+                </div>
+              </div>
+              <div class="phase pending" data-phase="7">
+                <div class="phase-header">
+                  <span class="phase-num">08</span>
+                  <span class="phase-status">○</span>
+                </div>
+                <div class="phase-info">
+                  <b>Validation</b>
+                  <small>Deliverables Ready</small>
+                </div>
+              </div>
+            </div>
+          </section>
 
-            <!-- URL Input Row -->
-            <div class="url-row">
-              <input id="videoUrl" type="url" placeholder="Paste video URL (e.g. https://example.com/video.mp4)" />
-              <button id="loadUrl" class="orange-btn">Load URL</button>
+
+
+
+          <!-- DEDICATED PROJECTS SECTION (Exclusive view when Projects is selected) -->
+          <section id="projectsSection" class="projects-section" style="display: none; width: 100%; margin: 10px 0 24px 0;">
+            <div class="panel projects-main-panel">
+              
+              <!-- Projects Header Bar -->
+              <div class="projects-header-bar">
+                <div style="display: flex; align-items: center; gap: 14px;">
+                  <div class="projects-icon-box">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 class="projects-title-heading">
+                      Drone Video Projects Library
+                    </h2>
+                    <p class="projects-title-desc">
+                      Projects listed in <b>chronological order</b> with date and time lastly modified. Click any project to inspect its keyframes, trajectory, and specifications on the Dashboard.
+                    </p>
+                  </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                  <button type="button" id="refreshProjectsBtn" class="outline-btn sm-btn">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    Refresh List
+                  </button>
+                  <button type="button" id="projectsUploadNewBtn" class="primary-btn sm-btn" onclick="document.getElementById('navBtnUploadVideo').click();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Upload New Video
+                  </button>
+                </div>
+              </div>
+
+              <!-- Projects Search & Filter Bar -->
+              <div class="projects-filter-bar">
+                <div class="projects-search-wrap" style="max-width: 480px; width: 100%;">
+                  <input type="text" id="projectsSearchInput" placeholder="Filter projects by file name..." class="projects-search-input">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" class="projects-search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                </div>
+              </div>
+
+              <!-- Projects Grid (Container for File-Like Buttons) -->
+              <div id="projectsGrid" class="projects-grid">
+                <!-- Dynamically populated by JavaScript with file-like buttons -->
+              </div>
+
+              <!-- Empty State -->
+              <div id="projectsEmptyState" class="projects-empty-state" style="display: none;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <h3>No Video Projects Found</h3>
+                <p>Upload a drone video in Step 03 (Upload Video) to extract frames, keyframes, and camera trajectory.</p>
+                <button type="button" class="primary-btn sm-btn" onclick="document.getElementById('navBtnUploadVideo').click();">
+                  ➔ Ingest Drone Video
+                </button>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- DASHBOARD ACTIVE PROJECT OVERVIEW BANNER (Keyframes, Trajectory, Total Frames, Duration, FPS, Resolution) -->
+          <div id="dashboardActiveProjectCard" class="dashboard-active-project-card">
+            <div class="active-project-header">
+              <div class="active-project-meta">
+                <div class="active-project-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </div>
+                <div>
+                  <div class="active-project-tagline">
+                    <span>ACTIVE DRONE VIDEO PROJECT</span>
+                    <span class="active-project-status" id="dashActiveStatus">LOADED</span>
+                  </div>
+                  <h3 id="dashActiveFilename" class="active-project-title">IMG_4670.MP4</h3>
+                </div>
+              </div>
+              <div class="active-project-controls">
+                <button type="button" id="dashSwitchProjectBtn" class="outline-btn sm-btn" onclick="document.getElementById('navBtnProjects').click();">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  Switch Video Project
+                </button>
+              </div>
             </div>
 
-            <!-- Quick Load Sample 4K Video -->
-            <div class="sample-prompt-row" style="margin-top: 12px; display: flex; align-items: center; justify-content: space-between; background: var(--bg-subtle); border: 1px dashed var(--navy-border); border-radius: 8px; padding: 10px 14px;">
-              <span style="font-size: 12px; color: var(--navy-muted); display: flex; align-items: center; gap: 8px; font-weight: 500;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--orange-primary)" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                Local 4K Drone Sample Available (92.5 MB)
-              </span>
-              <button id="loadSampleBtn" type="button" class="outline-btn" style="padding: 4px 12px; font-size: 12px; height: 30px; font-weight: 600; cursor: pointer;">
-                Load Sample Video
-              </button>
-            </div>
+            <!-- 6 Required Video Specs & Telemetry Metrics -->
+            <div class="active-project-metrics-grid">
+              <!-- 1. Resolution -->
+              <div class="dash-metric-card" id="cardActiveResolution">
+                <div class="metric-top-row">
+                  <span class="metric-label">RESOLUTION</span>
+                  <span class="metric-badge-pill cyan">SENSOR</span>
+                </div>
+                <strong id="dashActiveResolution" class="metric-value">-- × --</strong>
+                <small class="metric-desc">Video frame dimensions</small>
+              </div>
 
-            <!-- GPS & Flight Metadata Card -->
+              <!-- 2. Frames Per Sec (FPS) -->
+              <div class="dash-metric-card" id="cardActiveFps">
+                <div class="metric-top-row">
+                  <span class="metric-label">FPS (FRAME RATE)</span>
+                  <span class="metric-badge-pill orange">RATE</span>
+                </div>
+                <strong id="dashActiveFps" class="metric-value">-- fps</strong>
+                <small class="metric-desc">Drone sensor recording rate</small>
+              </div>
+
+              <!-- 3. Total Frames -->
+              <div class="dash-metric-card" id="cardActiveTotalFrames">
+                <div class="metric-top-row">
+                  <span class="metric-label">TOTAL FRAMES</span>
+                  <span class="metric-badge-pill yellow">COUNT</span>
+                </div>
+                <strong id="dashActiveTotalFrames" class="metric-value">--</strong>
+                <small class="metric-desc">Extracted video frames</small>
+              </div>
+
+              <!-- 4. Duration -->
+              <div class="dash-metric-card" id="cardActiveDuration">
+                <div class="metric-top-row">
+                  <span class="metric-label">DURATION</span>
+                  <span class="metric-badge-pill blue">TIMECODE</span>
+                </div>
+                <strong id="dashActiveDuration" class="metric-value">-- s</strong>
+                <small id="dashActiveDurationFmt" class="metric-desc">Total flight duration</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- 1. DEDICATED CAMERA TRAJECTORY SECTION (Visible on Dashboard) -->
+          <section id="dedicatedTrajectorySection" class="dedicated-trajectory-section" style="display: block; width: 100%; margin-bottom: 24px;">
+            <div class="panel trajectory-main-panel" style="padding: 24px; background: rgba(10, 18, 30, 0.98); border: 2px solid rgba(255, 107, 0, 0.4); border-radius: var(--radius-md); box-shadow: 0 12px 40px rgba(0,0,0,0.5);">
+              
+              <!-- Header Bar -->
+              <div class="trajectory-header-bar" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px;">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 44px; height: 44px; border-radius: 10px; background: rgba(255, 107, 0, 0.15); border: 1.5px solid var(--orange-primary); display: flex; align-items: center; justify-content: center; color: var(--orange-primary);">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 style="margin: 0; font-size: 22px; font-weight: 800; color: #f8fafc; letter-spacing: -0.3px;">
+                        Camera Flight Trajectory
+                      </h2>
+                      <p style="margin: 4px 0 0; font-size: 13px; color: #94a3b8;">
+                        Relative 2D Camera Motion Estimation using ORB Features &amp; RANSAC Affine Transform across <b>ALL extracted video frames</b>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Live Metrics Summary Badges -->
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                  <div class="cv-metric-pill purple" style="font-size: 12.5px; padding: 7px 15px; font-weight: 800; border-radius: 6px;" id="trajFullPoints">
+                    -- Trajectory Points
+                  </div>
+                  <div class="cv-metric-pill green" style="font-size: 12.5px; padding: 7px 15px; font-weight: 800; border-radius: 6px;" id="trajFullMatches">
+                    Matches: --
+                  </div>
+                  <div class="cv-metric-pill yellow" style="font-size: 12.5px; padding: 7px 15px; font-weight: 800; border-radius: 6px;" id="trajFullFailed">
+                    Failed: --
+                  </div>
+                  <button type="button" id="downloadTrajectoryBtn" class="primary-btn sm-btn" style="padding: 7px 15px; font-size: 12.5px; display: flex; align-items: center; gap: 6px; background: var(--orange-primary); color: #000; font-weight: 800; border: 1.5px solid #000;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download JSON
+                  </button>
+                </div>
+              </div>
+
+              <!-- Main Full-Sized Trajectory Canvas Stage -->
+              <div class="trajectory-canvas-viewport" style="background: #020617; border-radius: var(--radius-sm); border: 1.5px solid rgba(255, 255, 255, 0.1); padding: 16px; position: relative; width: 100%; box-sizing: border-box; overflow: hidden;">
+                <canvas id="trajectory2dCanvas" width="1200" height="520" style="width: 100%; height: 520px; display: block; border-radius: 4px;"></canvas>
+              </div>
+
+              <!-- Trajectory Legend & Stats Footer -->
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 13px; color: #94a3b8;">
+                <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                  <span style="display: inline-flex; align-items: center; gap: 7px; color: #10b981; font-weight: 700;">
+                    <span style="width: 11px; height: 11px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+                    Start Point (0, 0)
+                  </span>
+                  <span style="display: inline-flex; align-items: center; gap: 7px; color: #ef4444; font-weight: 700;">
+                    <span style="width: 11px; height: 11px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 8px #ef4444;"></span>
+                    End Point
+                  </span>
+                  <span style="display: inline-flex; align-items: center; gap: 7px; color: #ff6b00; font-weight: 700;">
+                    <span style="width: 20px; height: 3px; background: #ff6b00; border-radius: 2px;"></span>
+                    Camera Flight Trajectory Path
+                  </span>
+                  <span style="display: inline-flex; align-items: center; gap: 7px; color: #38bdf8; font-weight: 600;">
+                    <span style="width: 7px; height: 7px; border-radius: 50%; background: #38bdf8;"></span>
+                    Frame Feature Points (1:1 per frame)
+                  </span>
+                </div>
+                <div id="trajectoryCoordsSpan" style="font-family: monospace; color: #cbd5e1; font-size: 12.5px;">
+                  Relative Motion Extent: X: [--, --] px · Y: [--, --] px
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- 2. DEDICATED KEYFRAMES SECTION (Visible on Dashboard) -->
+          <section id="dashboardKeyframesSection" class="dashboard-keyframes-section" style="display: block; width: 100%; margin-bottom: 24px;">
+            <div class="panel keyframe-main-panel" style="padding: 24px; background: var(--bg-card); border: var(--border-thick); box-shadow: var(--shadow-lg); border-radius: var(--radius-main);">
+              
+              <!-- Header Bar -->
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; border-bottom: var(--border-main); padding-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <div style="width: 44px; height: 44px; border-radius: 10px; background: var(--accent-green-soft); border: var(--border-main); box-shadow: 2.5px 2.5px 0px #000; display: flex; align-items: center; justify-content: center; color: var(--accent-green);">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5"/>
+                      <polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 style="margin: 0; font-size: 22px; font-weight: 800; color: var(--ink-black); letter-spacing: -0.3px;">
+                      Extracted Keyframes Selection
+                    </h2>
+                  </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span id="keyframesCountBadge" class="format-badge-pill" style="font-size: 11.5px; padding: 6px 12px; background: var(--accent-green); color: #000; font-weight: 800; border: 1.5px solid #000; box-shadow: 1.5px 1.5px 0px #000;">
+                    -- KEYFRAMES
+                  </span>
+                </div>
+              </div>
+
+              <!-- Main Photographic Keyframe Viewer Stage -->
+              <div class="panel keyframe-viewer-panel" id="keyframeViewerPanel" style="padding: 16px; background: #ffffff; border: var(--border-thin); box-shadow: 2px 2px 0px #000; border-radius: var(--radius-sm); margin-bottom: 0px;">
+                <div class="matplotlib-frame-header" id="selectedKeyframeMatplotlibTitle" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed rgba(0,0,0,0.15);">
+                  <div class="keyframe-title-heading" style="font-family: var(--font-heading); font-size: 16px; font-weight: 800; color: var(--accent-orange);">
+                    KEYFRAME <span id="keyframeIdxNum">1</span> / <span id="keyframeTotalCount">--</span>
+                  </div>
+                  <div class="matplotlib-title-text" style="font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--ink-muted);">
+                    Original Frame: <span id="keyframeOrigNum" style="color: var(--ink-black); font-weight: 900;">--</span> / <span id="keyframeOrigTotal">--</span> &nbsp;&nbsp;|&nbsp;&nbsp; Time: <span id="keyframeTimestamp" style="color: var(--ink-black); font-weight: 900;">0.00</span>s &nbsp;&nbsp;|&nbsp;&nbsp; Sharpness: <span id="keyframeSharpness" style="color: var(--accent-green); font-weight: 900;">--</span>
+                  </div>
+                </div>
+
+                <!-- High-Resolution Photographic Keyframe Display -->
+                <div class="keyframe-photo-container" style="background: #020617; border-radius: var(--radius-sm); overflow: hidden; position: relative; border: var(--border-thin); box-shadow: 2px 2px 0px #000;">
+                  <img id="selectedKeyframeImage" class="keyframe-photo-image" src="" alt="Selected Useful Drone Keyframe" style="width: 100%; display: block; max-height: 520px; object-fit: contain; margin: 0 auto;" />
+                </div>
+
+                <!-- Interactive Scrub Slider -->
+                <div class="ipywidgets-slider-section" style="margin-top: 14px; display: flex; align-items: center; gap: 14px;">
+                  <span class="ipywidgets-label" style="font-family: var(--font-heading); font-size: 13px; font-weight: 800;">Scrub Keyframe:</span>
+                  <input type="range" id="selectedKeyframeSlider" min="0" max="0" value="0" step="1" class="ipywidgets-range-slider" style="flex: 1; height: 8px; cursor: pointer;" title="Scrub through selected keyframes">
+                  <input type="number" id="selectedKeyframeNumberInput" min="0" max="0" value="0" class="ipywidgets-num-box" style="width: 70px; text-align: center; font-family: var(--font-mono); font-weight: 800;" title="Keyframe index">
+                </div>
+              </div>
+
+              <!-- Hidden filmstrip row container for JS compatibility -->
+              <div id="keyframesFilmstrip" style="display: none !important;"></div>
+
+            </div>
+          </section>
+
+          <!-- DEDICATED UPLOAD VIDEO SECTION (Visible only when Upload Video workflow is active) -->
+          <section id="uploadVideoSection" class="upload-video-section" style="display: none; width: 100%; margin-bottom: 24px;">
+            <div id="uploadPanel" class="panel upload-panel" style="background: var(--bg-card); border: var(--border-thick); box-shadow: var(--shadow-lg); border-radius: var(--radius-main); padding: 24px;">
+              <div class="panel-title">
+                <div>
+                  <h2>Video Ingestion</h2>
+                  <p class="panel-sub">Select a drone video source to reconstruct 3D model</p>
+                </div>
+              </div>
+
+              <!-- Direct Drag & Drop or File Browser -->
+              <div id="fileUploadContainer" class="upload-mode-container" style="display: block; margin-top: 16px;">
+                <input id="videoFile" type="file" accept="video/mp4,video/quicktime,video/x-msvideo,video/*" style="display: none;">
+                <div id="dropZone" class="upload-dropzone" onclick="document.getElementById('videoFile').click();">
+                  <div class="dropzone-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                      <polyline points="17 8 12 3 7 8"/>
+                      <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                  </div>
+                  <div class="dropzone-text">
+                    <strong>Drag &amp; drop drone video file</strong>
+                    <p>Supports 4K/1080p MP4, MOV, or AVI flight recordings</p>
+                  </div>
+                  <button type="button" class="primary-btn sm-btn" onclick="event.stopPropagation(); document.getElementById('videoFile').click();">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Browse Computer
+                  </button>
+                </div>
+              </div>
+
+              <!-- Hidden elements for JS compatibility -->
+              <div style="display: none !important;">
+                <input type="url" id="videoUrl" />
+                <button type="button" id="loadUrl"></button>
+              </div>
+
+              <!-- Proceed to Video Processing Action Box (Activated when a video is uploaded/ready) -->
+              <div id="videoProcessingActionBox" class="processing-advance-card" style="display: none;">
+                <div class="processing-advance-header">
+                  <div class="processing-advance-info">
+                    <div class="processing-success-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <div>
+                      <strong id="processingAdvanceTitle">Video Uploaded &amp; Ready</strong>
+                      <span id="processingAdvanceSub">OpenCV ready · Click below to extract image frames &amp; keyframes</span>
+                    </div>
+                  </div>
+                  <span id="processingAdvanceBadge" class="format-badge-pill" style="font-size: 11px; padding: 4px 10px; background: var(--accent-green); color: #000; font-weight: 800; border: 1.5px solid #000;">READY</span>
+                </div>
+
+                <button type="button" id="btnGoToVideoProcessing" class="start-processing-btn">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/>
+                    <line x1="7" y1="2" x2="7" y2="22"/>
+                    <line x1="17" y1="2" x2="17" y2="22"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                  </svg>
+                  <span>Proceed to Video Processing (Extract Frames &amp; Keyframes) ➔</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Hidden Secondary Modules (Not on Dashboard) -->
+          <div class="workspace-grid" id="workspaceGrid" style="display: none !important;">
+            <!-- Left Column: Video Input & Configuration -->
+            <div class="left-column" id="leftColumn">
+
+              <!-- Longitudinal Frame Extraction Section (Image Frames, NOT a video!) -->
+              <div id="videoContainer" class="video-preview-wrapper frame-extraction-container" style="display:none;">
+                
+                <!-- Hidden video element kept for fallback canvas/codec decoding if needed -->
+                <video id="videoPreview" class="video-preview-hidden" preload="metadata" style="display: none !important;" playsinline></video>
+
+                <div class="panel frame-extraction-main-panel" style="padding: 16px;">
+                  <!-- Matplotlib Figure Title (exact match for plt.title) -->
+                  <div class="matplotlib-frame-header" id="matplotlibTitleBar">
+                    <div class="matplotlib-title-text">
+                      Frame: <span id="colabFrameNum">1</span> / <span id="colabTotalFrames">--</span> &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Time: <span id="colabTimestamp">0.00</span> sec &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Sharpness: <span id="colabSharpness">--</span>
+                    </div>
+                  </div>
+
+                  <!-- Main Extracted Photographic Frame Image (plt.imshow) -->
+                  <div class="colab-photo-frame-container" id="colabPhotoContainer" style="background: #000; border-radius: var(--radius-sm); overflow: hidden; position: relative;">
+                    <img id="colabMainImage" class="colab-photo-image" src="/api/video/frame_image?frame=0&width=1280" alt="Extracted Drone Video Frame" style="width: 100%; display: block; max-height: 520px; object-fit: contain; margin: 0 auto;" />
+                    <canvas id="colabMainCanvas" class="colab-photo-canvas" style="display: none;"></canvas>
+                    
+                    <!-- Empty State when no video uploaded -->
+                    <div id="colabEmptyState" style="display: none; padding: 60px 20px; text-align: center; color: #94a3b8;">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 12px; opacity: 0.6;"><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14v-4z"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
+                      <h3 style="color: #cbd5e1; margin-bottom: 6px; font-size: 16px;">No Video Loaded for Frame Extraction</h3>
+                      <p style="font-size: 13px; max-width: 400px; margin: 0 auto 16px;">Please upload your drone video in Step 02 (Upload Video) to extract frames with OpenCV.</p>
+                      <button type="button" class="primary-btn sm-btn" onclick="document.getElementById('navBtnUploadVideo').click();">
+                        ➔ Go to Upload Video
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- ipywidgets Interactive IntSlider (interact(show_frame, frame_number=IntSlider(...))) -->
+                  <div class="ipywidgets-slider-section">
+                    <div class="ipywidgets-slider-row">
+                      <span class="ipywidgets-label">Frame:</span>
+                      <input type="range" id="colabFrameSlider" min="0" max="0" value="0" step="1" class="ipywidgets-range-slider" title="Drag to scrub through video frames">
+                      <input type="number" id="colabFrameNumberInput" min="0" max="0" value="0" class="ipywidgets-num-box" title="Frame index">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- OpenCV Video Properties Metric Cards (cv2.VideoCapture Output) -->
+                <div class="panel cv-video-details-panel" id="cvVideoDetailsPanel">
+                  <!-- 4 High-Impact Neo-Brutalist Metric Cards -->
+                  <div class="cv-metrics-grid">
+                    <!-- 1. Resolution -->
+                    <div class="cv-metric-card">
+                      <div class="cv-metric-top">
+                        <span class="cv-metric-label">RESOLUTION</span>
+                        <span class="cv-metric-pill orange">W × H</span>
+                      </div>
+                      <div class="cv-metric-val" id="cvResValue">-- x --</div>
+                      <div class="cv-metric-sub">Width: <b id="cvWidthVal">--</b>px · Height: <b id="cvHeightVal">--</b>px</div>
+                    </div>
+
+                    <!-- 2. FPS -->
+                    <div class="cv-metric-card">
+                      <div class="cv-metric-top">
+                        <span class="cv-metric-label">FPS (FRAME RATE)</span>
+                        <span class="cv-metric-pill yellow">cv2.CAP_PROP_FPS</span>
+                      </div>
+                      <div class="cv-metric-val" id="cvFpsValue">--</div>
+                      <div class="cv-metric-sub">Frames per second (playback rate)</div>
+                    </div>
+
+                    <!-- 3. Total Frames -->
+                    <div class="cv-metric-card">
+                      <div class="cv-metric-top">
+                        <span class="cv-metric-label">TOTAL FRAMES</span>
+                        <span class="cv-metric-pill green">FRAME COUNT</span>
+                      </div>
+                      <div class="cv-metric-val" id="cvTotalFramesValue">--</div>
+                      <div class="cv-metric-sub">Indexed frames: <b>#0</b> to <b id="cvMaxFrameIndex">--</b></div>
+                    </div>
+
+                    <!-- 4. Duration -->
+                    <div class="cv-metric-card">
+                      <div class="cv-metric-top">
+                        <span class="cv-metric-label">DURATION</span>
+                        <span class="cv-metric-pill purple">CALCULATED</span>
+                      </div>
+                      <div class="cv-metric-val" id="cvDurationValue">--s</div>
+                      <div class="cv-metric-sub">total_frames / fps = <b id="cvDurationFormula">--</b> seconds</div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </section>
+
+          <!-- Legacy Workspace Grid (Hidden from Dashboard: Viewport, Metadata, Config, Logs, Deliverables) -->
+          <div id="workspaceGrid" class="workspace-grid" style="display: none !important;">
+            <div class="left-column">
+              <!-- GPS & Flight Metadata Card -->
             <div id="metadataCard" class="metadata-card">
               <div class="metadata-header">
                 <div class="metadata-title-wrap">
@@ -378,34 +844,8 @@
               </div>
             </div>
 
-            <!-- Video Player Preview Container -->
-            <div id="videoContainer" class="video-preview-wrapper" style="display:none;">
-              <div class="preview-header">
-                <span>Loaded Video Stream</span>
-                <span id="fileName" class="file-name-tag">video.mp4</span>
-              </div>
-              <video id="videoPreview" class="video-preview" controls preload="metadata" poster="assets/media/extracted_frame.jpg"></video>
-              
-              <!-- Video Frame Extraction Toolbar -->
-              <div class="video-extract-toolbar">
-                <div class="timecode-display">
-                  <span class="pulse-dot-sm"></span>
-                  <span>Timecode: <strong id="videoTimecodeLive">00:04.50</strong></span>
-                </div>
-                <div class="extract-btn-group">
-                  <button id="stepBackSec" type="button" class="outline-btn sm-btn" title="Step back 1 second">◀ -1s</button>
-                  <button id="extractVideoFrameBtn" type="button" class="primary-btn sm-btn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    Extract Frame ➔ Show 3D Nearby
-                  </button>
-                  <button id="stepForwardSec" type="button" class="outline-btn sm-btn" title="Step forward 1 second">+1s ▶</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Reconstruction Parameters -->
-          <div class="panel">
+            <!-- Reconstruction Parameters -->
+          <div class="panel" id="pipelineConfigPanel">
             <div class="panel-title">
               <h2>2. Pipeline Configuration</h2>
               <span class="badge-navy">AI ENGINE V2.4</span>
@@ -449,7 +889,7 @@
         </div>
 
         <!-- Right Column: 3D Viewport & Output -->
-        <div class="right-column">
+        <div class="right-column" id="rightColumn">
           <!-- 3D Interactive Viewer -->
           <div class="panel viewport-panel">
             <div class="panel-title">
@@ -645,15 +1085,8 @@
           </div>
         </div>
       </div>
+    </div>
     </main>
-
-    <!-- Footer -->
-    <footer class="site-footer">
-      <div class="container footer-content">
-        <div>&copy; 2026 Aero3D OnePass — Smart India Hackathon Prototype</div>
-        <div>Built with <b>Three.js WebGL</b> & <b>Depth Anything V2</b> AI Model</div>
-      </div>
-    </footer>
 
     <!-- Camera Intrinsics K-Matrix Modal Dialog -->
     <div id="intrinsicsModal" class="modal-backdrop" style="display: none;">
