@@ -43,14 +43,20 @@ class TestSqliteStore(unittest.TestCase):
 
 class TestStoreFallback(unittest.TestCase):
     def test_supabase_without_keys_falls_back_to_sqlite(self):
+        # Force Supabase ON but blank the keys, so the fallback path is exercised deterministically
+        # regardless of whatever real keys the developer's .env may hold.
         store_mod._store = None
-        old = config.settings.USE_SUPABASE
+        saved = (config.settings.USE_SUPABASE, config.settings.SUPABASE_URL,
+                 config.settings.SUPABASE_SERVICE_ROLE_KEY)
         config.settings.USE_SUPABASE = True
+        config.settings.SUPABASE_URL = ""
+        config.settings.SUPABASE_SERVICE_ROLE_KEY = ""
         try:
             s = store_mod.get_store()
-            self.assertEqual(s.backend, "sqlite")  # no keys -> graceful fallback, app stays up
+            self.assertEqual(s.backend, "sqlite")  # missing keys -> graceful fallback, app stays up
         finally:
-            config.settings.USE_SUPABASE = old
+            (config.settings.USE_SUPABASE, config.settings.SUPABASE_URL,
+             config.settings.SUPABASE_SERVICE_ROLE_KEY) = saved
             store_mod._store = None
 
 
