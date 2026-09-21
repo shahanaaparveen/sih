@@ -192,6 +192,10 @@ def process_video_endpoint(
     upload_file = video or file
     if not upload_file or not upload_file.filename:
         raise HTTPException(status_code=400, detail="No video file provided in multipart/form-data.")
+    ext = os.path.splitext(upload_file.filename)[1].lower()
+    if ext not in settings.ALLOWED_VIDEO_EXT:
+        raise HTTPException(status_code=400,
+                            detail=f"Unsupported file type '{ext}'. Allowed: {settings.ALLOWED_VIDEO_EXT}.")
     if keyframe_mode not in KEYFRAME_MODES:
         raise HTTPException(status_code=400, detail=f"keyframe_mode must be one of {list(KEYFRAME_MODES)}.")
 
@@ -203,20 +207,50 @@ def process_video_endpoint(
         PIPELINE_LOCK.release()
 
 
-def _process_uploaded_video(upload_file: UploadFile, sharpness_threshold: float, similarity_threshold: float,
-                            keyframe_mode: str):
-    filename = upload_file.filename
-    clean_filename = "".join(c for c in filename if c.isalnum() or c in "._- ")
-    target_path = os.path.join(VIDEOS_DIR, clean_filename)
+def _silent_remove(path: str):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
-    # Save uploaded file
+
+def _clean_upload_name(filename: str) -> str:
+    """Single sanitizer for every uploaded filename: drop any directory parts (basename), then keep
+    only safe characters. Prevents path traversal from a crafted filename."""
+    base = os.path.basename(filename or "")
+    cleaned = "".join(c for c in base if c.isalnum() or c in "._- ").strip()
+    return cleaned or "upload"
+
+
+def _save_upload_limited(upload_file: UploadFile, target_path: str, max_bytes: int) -> int:
+    """Stream an upload to disk, aborting once it passes max_bytes so a huge POST cannot fill the disk."""
+    written = 0
     try:
         with open(target_path, "wb") as buffer:
-            shutil.copyfileobj(upload_file.file, buffer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save video: {e}")
+            while True:
+                chunk = upload_file.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(status_code=413,
+                                        detail=f"Upload exceeds the {settings.MAX_UPLOAD_MB} MB limit.")
+                buffer.write(chunk)
+    except HTTPException:
+        _silent_remove(target_path)
+        raise
+    except Exception:
+        _silent_remove(target_path)
+        raise HTTPException(status_code=500, detail="Failed to save upload.")
+    return written
 
-    print(f"[API] Uploaded video saved: {target_path} ({os.path.getsize(target_path)} bytes)")
+
+def _process_uploaded_video(upload_file: UploadFile, sharpness_threshold: float, similarity_threshold: float,
+                            keyframe_mode: str):
+    clean_filename = _clean_upload_name(upload_file.filename)
+    target_path = os.path.join(VIDEOS_DIR, clean_filename)
+    size = _save_upload_limited(upload_file, target_path, settings.MAX_UPLOAD_BYTES)
+    print(f"[API] Uploaded video saved: {target_path} ({size} bytes)")
 
     # Execute full pipeline
     try:
@@ -952,8 +986,7 @@ def stage04_import(file: UploadFile = File(...), project: Optional[str] = None):
     os.makedirs(stage_dir, exist_ok=True)
     incoming = os.path.join(stage_dir, "incoming.zip")
     try:
-        with open(incoming, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        _save_upload_limited(file, incoming, settings.MAX_UPLOAD_BYTES)
         summary = stage04_service.import_results(stage_dir, slug, len(results["keyframes"]), incoming)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
