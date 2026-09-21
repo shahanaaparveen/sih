@@ -695,8 +695,8 @@ async def get_projects_list():
                             "fps": fps,
                             "duration": dur,
                             "total_frames": total_f,
-                            "keyframes": total_f,
-                            "trajectory_points": total_f,
+                            "keyframes": None,          # unknown until the pipeline runs (do not fake it)
+                            "trajectory_points": None,
                             "created_at": mtime,
                             "status": "READY"
                         }
@@ -826,13 +826,14 @@ async def select_project_endpoint(filename: str = Query(...)):
                 "fps": fps,
                 "duration": dur,
                 "duration_seconds": dur,
-                "total_frames": total,
-                "number_of_extracted_frames": total,
-                "number_of_sharp_frames": total,
-                "number_of_final_keyframes": total,
-                "trajectory_points": total,
-                "successful_trajectory_matches": total,
-                "failed_trajectory_frames": 0,
+                "total_frames": total,      # real (from the video); the rest are unknown until processed
+                "number_of_extracted_frames": None,
+                "number_of_sharp_frames": None,
+                "number_of_final_keyframes": None,
+                "trajectory_points": None,
+                "successful_trajectory_matches": None,
+                "failed_trajectory_frames": None,
+                "processed": False,
                 "keyframes": [],
                 "trajectory": []
             }
