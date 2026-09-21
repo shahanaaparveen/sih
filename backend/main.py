@@ -1038,12 +1038,10 @@ def stage04_depth_info(frame_index: int, project: Optional[str] = None):
 # 5. STATIC FILES & FRONTEND HOSTING
 # ==========================================
 
+# Only the frontend's own assets are served statically. The former "/storage" and "/uploads" mounts
+# exposed every project's frames, keyframes, result JSONs and raw videos to any caller; those files
+# are now reachable only through the validated /api/... endpoints (which scope to the active project).
 app.mount("/assets", StaticFiles(directory=os.path.join(PROJECT_ROOT, "assets")), name="assets")
-app.mount("/storage", StaticFiles(directory=STORAGE_DIR), name="storage")
-
-UPLOAD_DIR = os.path.join(PROJECT_ROOT, "uploads")
-if os.path.exists(UPLOAD_DIR):
-    app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 @app.get("/")
 async def serve_index():
