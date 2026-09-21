@@ -32,6 +32,7 @@ from db.store import get_store
 from services.video_processor import (process_video_pipeline, get_video_metadata, get_current_progress, project_slug,
                                       KEYFRAME_MODES, DEFAULT_KEYFRAME_MODE)
 from services import stage04 as stage04_service
+from services import sfm_local
 
 STORAGE_DIR = os.path.join(BACKEND_DIR, "storage")
 VIDEOS_DIR = os.path.join(STORAGE_DIR, "videos")
@@ -115,6 +116,10 @@ def save_cached_results(data: Dict[str, Any]):
 
 # Only one video may be processed at a time (pipeline progress is a single global tracker)
 PIPELINE_LOCK = threading.Lock()
+
+# Stage 04 (local pose + depth) also runs one at a time; its progress is a single global tracker.
+STAGE04_LOCK = threading.Lock()
+stage04_progress: Dict[str, Any] = {"status": "IDLE", "stage": "", "message": "", "project": None}
 
 def _active_slug() -> Optional[str]:
     if latest_results:
@@ -1032,6 +1037,40 @@ def stage04_depth_info(frame_index: int, project: Optional[str] = None):
     if not info:
         raise HTTPException(status_code=404, detail=f"No depth report entry for frame {frame_index}.")
     return {"success": True, **info}
+
+
+@app.post("/api/stage04/run")
+def stage04_run(project: Optional[str] = None, device: str = "cpu", matcher: str = "auto",
+                run_depth: bool = True, num_threads: int = 4):
+    """Runs pose (COLMAP) + optional depth locally in a background thread. No Colab round-trip.
+    Poll /api/stage04/run_progress; when COMPLETED, read results via /api/stage04/status|scene|depth."""
+    results, slug = _resolve_project(project)
+    if not STAGE04_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="A Stage 04 run is already in progress.")
+    stage04_progress.update({"status": "RUNNING", "stage": "starting", "message": "", "project": results["filename"]})
+
+    def _cb(stage: str, message: str):
+        stage04_progress.update({"stage": stage, "message": message})
+
+    def _work():
+        try:
+            summary = sfm_local.run_local_stage04(
+                results, _project_keyframes_dir(slug), _project_frames_dir(slug), _stage04_dir(slug), slug,
+                device=device, matcher=matcher, run_depth=run_depth, num_threads=(num_threads or None), progress=_cb)
+            stage04_progress.update({"status": "COMPLETED", "stage": "done",
+                                     "message": f"verdict={summary.get('verdict')}"})
+        except Exception as e:
+            stage04_progress.update({"status": "FAILED", "stage": "error", "message": str(e)})
+        finally:
+            STAGE04_LOCK.release()
+
+    threading.Thread(target=_work, daemon=True).start()
+    return {"success": True, "started": True, "project": results["filename"]}
+
+
+@app.get("/api/stage04/run_progress")
+def stage04_run_progress():
+    return dict(stage04_progress)
 
 
 # ==========================================
