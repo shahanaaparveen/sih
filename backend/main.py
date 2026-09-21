@@ -16,8 +16,6 @@ if sys.platform == "win32":
 
 import cv2
 import numpy as np
-import pymongo
-from bson import ObjectId
 from fastapi import FastAPI, File, UploadFile, Query, HTTPException, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -29,11 +27,10 @@ PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
+from config import settings
+from db.store import get_store
 from services.video_processor import (process_video_pipeline, get_video_metadata, get_current_progress, project_slug,
                                       KEYFRAME_MODES, DEFAULT_KEYFRAME_MODE)
-from services.frame_extractor import extract_all_frames
-from services.keyframe_selector import calculate_sharpness, select_keyframes
-from services.trajectory import calculate_camera_trajectory
 from services import stage04 as stage04_service
 
 STORAGE_DIR = os.path.join(BACKEND_DIR, "storage")
@@ -62,49 +59,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# MongoDB Configuration
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+# Document store (SQLite by default, Supabase when configured). See db/store.py.
 DB_NAME = "aero3d_db"
-mongo_client = None
-db = None
-
-def get_db():
-    global mongo_client, db
-    if db is None:
-        try:
-            mongo_client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
-            mongo_client.server_info()
-            db = mongo_client[DB_NAME]
-            print(f"[MONGODB] Connected to '{DB_NAME}' at {MONGO_URI}")
-        except Exception as err:
-            print(f"[MONGODB ERROR] Could not connect to MongoDB: {err}")
-            return None
-    return db
-
-def serialize_doc(doc):
-    if not doc:
-        return doc
-    if isinstance(doc, list):
-        return [serialize_doc(d) for d in doc]
-    if isinstance(doc, dict):
-        new_doc = {}
-        for k, v in doc.items():
-            if isinstance(v, ObjectId):
-                new_doc[k] = str(v)
-            elif isinstance(v, datetime):
-                new_doc[k] = v.isoformat()
-            elif isinstance(v, dict) or isinstance(v, list):
-                new_doc[k] = serialize_doc(v)
-            else:
-                new_doc[k] = v
-        return new_doc
-    return doc
 
 # In-memory and disk cache for current video pipeline state
 CACHE_FILE = os.path.join(STORAGE_DIR, "latest_pipeline_results.json")
@@ -268,23 +230,20 @@ def _process_uploaded_video(upload_file: UploadFile, sharpness_threshold: float,
         )
         save_cached_results(results)
 
-        # Record to MongoDB if connected
-        database = get_db()
-        if database is not None:
-            try:
-                database["pipeline_jobs"].insert_one({
-                    "job_id": f"JOB-{int(datetime.utcnow().timestamp())}",
-                    "filename": clean_filename,
-                    "created_at": datetime.utcnow(),
-                    "total_frames": results["total_frames"],
-                    "sharp_frames": results["number_of_sharp_frames"],
-                    "keyframes": results["number_of_final_keyframes"],
-                    "trajectory_points": results["trajectory_points"],
-                    "resolution": results["resolution"],
-                    "fps": results["fps"]
-                })
-            except Exception as e:
-                print(f"[MONGODB LOG ERROR] {e}")
+        # Record the run to the document store
+        try:
+            get_store().insert("pipeline_jobs", {
+                "job_id": f"JOB-{int(datetime.utcnow().timestamp())}",
+                "filename": clean_filename,
+                "total_frames": results["total_frames"],
+                "sharp_frames": results["number_of_sharp_frames"],
+                "keyframes": results["number_of_final_keyframes"],
+                "trajectory_points": results["trajectory_points"],
+                "resolution": results["resolution"],
+                "fps": results["fps"]
+            })
+        except Exception as e:
+            print(f"[DB LOG ERROR] {e}")
 
         return JSONResponse(status_code=200, content=results)
 
@@ -605,20 +564,20 @@ async def get_trajectory_endpoint():
     }
 
 # ==========================================
-# 4. TELEMETRY & PIPELINE DATABASE (MONGODB)
+# 4. TELEMETRY & PIPELINE DATABASE (document store)
 # ==========================================
 
 @app.get("/api/health")
 async def health_check():
-    database = get_db()
-    mongo_ok = database is not None
+    store = get_store()
+    db_ok = store.healthy()
     counts = {"telemetry_logs": 0, "pipeline_jobs": 0}
-    if mongo_ok:
+    if db_ok:
         try:
-            counts["telemetry_logs"] = database["telemetry_logs"].count_documents({})
-            counts["pipeline_jobs"] = database["pipeline_jobs"].count_documents({})
+            counts["telemetry_logs"] = store.count("telemetry_logs")
+            counts["pipeline_jobs"] = store.count("pipeline_jobs")
         except Exception:
-            mongo_ok = False
+            db_ok = False
 
     total_extracted = len([f for f in os.listdir(active_frames_dir()) if f.endswith(".jpg")])
     total_kf = len([f for f in os.listdir(active_keyframes_dir()) if f.endswith(".jpg")])
@@ -628,8 +587,8 @@ async def health_check():
         "backend": "FastAPI",
         "keyframe_modes": list(KEYFRAME_MODES),
         "default_keyframe_mode": DEFAULT_KEYFRAME_MODE,
-        "mongodb_connected": mongo_ok,
-        "mongodb_uri": MONGO_URI,
+        "db_backend": store.backend,
+        "db_connected": db_ok,
         "database": DB_NAME,
         "collections": counts,
         "storage": {
@@ -641,51 +600,37 @@ async def health_check():
 
 @app.post("/api/telemetry")
 async def log_telemetry(request: Request):
-    database = get_db()
-    if database is None:
-        return JSONResponse(status_code=503, content={"error": "MongoDB unavailable"})
     try:
         data = await request.json()
-        data["created_at"] = datetime.utcnow()
-        result = database["telemetry_logs"].insert_one(data)
-        return {"success": True, "id": str(result.inserted_id)}
+        doc_id = get_store().insert("telemetry_logs", data)
+        return {"success": True, "id": doc_id}
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to save telemetry."})
 
 @app.get("/api/telemetry")
 async def get_telemetry():
-    database = get_db()
-    if database is None:
-        return JSONResponse(status_code=503, content={"error": "MongoDB unavailable"})
     try:
-        logs = list(database["telemetry_logs"].find().sort("created_at", -1).limit(20))
-        return {"success": True, "count": len(logs), "logs": serialize_doc(logs)}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        logs = get_store().list("telemetry_logs", limit=20)
+        return {"success": True, "count": len(logs), "logs": logs}
+    except Exception:
+        return JSONResponse(status_code=500, content={"error": "Failed to read telemetry."})
 
 @app.post("/api/pipeline/job")
 async def save_pipeline_job(request: Request):
-    database = get_db()
-    if database is None:
-        return JSONResponse(status_code=503, content={"error": "MongoDB unavailable"})
     try:
         data = await request.json()
-        data["created_at"] = datetime.utcnow()
-        result = database["pipeline_jobs"].insert_one(data)
-        return {"success": True, "id": str(result.inserted_id)}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        doc_id = get_store().insert("pipeline_jobs", data)
+        return {"success": True, "id": doc_id}
+    except Exception:
+        return JSONResponse(status_code=500, content={"error": "Failed to save job."})
 
 @app.get("/api/pipeline/jobs")
 async def get_pipeline_jobs():
-    database = get_db()
-    if database is None:
-        return JSONResponse(status_code=503, content={"error": "MongoDB unavailable"})
     try:
-        jobs = list(database["pipeline_jobs"].find().sort("created_at", -1).limit(10))
-        return {"success": True, "count": len(jobs), "jobs": serialize_doc(jobs)}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        jobs = get_store().list("pipeline_jobs", limit=10)
+        return {"success": True, "count": len(jobs), "jobs": jobs}
+    except Exception:
+        return JSONResponse(status_code=500, content={"error": "Failed to read jobs."})
 
 # ==========================================
 # 4.5. PROJECTS DIRECTORY & SELECTION API
@@ -699,30 +644,28 @@ async def get_projects_list():
     """
     projects_dict = {}
 
-    # 1. Inspect MongoDB pipeline_jobs
-    database = get_db()
-    if database is not None:
-        try:
-            jobs = list(database["pipeline_jobs"].find().sort("created_at", -1))
-            for job in jobs:
-                fname = job.get("filename")
-                if fname and fname not in projects_dict:
-                    fps_val = float(job.get("fps") or 30.0)
-                    total_f = int(job.get("total_frames") or 0)
-                    dur_val = round(total_f / max(1.0, fps_val), 2)
-                    projects_dict[fname] = {
-                        "filename": fname,
-                        "resolution": job.get("resolution", "3840 x 2160"),
-                        "fps": round(fps_val, 2),
-                        "duration": dur_val,
-                        "total_frames": total_f,
-                        "keyframes": int(job.get("keyframes") or 0),
-                        "trajectory_points": int(job.get("trajectory_points") or total_f),
-                        "created_at": job.get("created_at").isoformat() if isinstance(job.get("created_at"), datetime) else str(job.get("created_at", "")),
-                        "status": "PROCESSED"
-                    }
-        except Exception as e:
-            print(f"[PROJECTS MONGO ERROR] {e}")
+    # 1. Inspect recorded pipeline jobs from the document store
+    try:
+        jobs = get_store().list("pipeline_jobs", limit=1000)
+        for job in jobs:
+            fname = job.get("filename")
+            if fname and fname not in projects_dict:
+                fps_val = float(job.get("fps") or 30.0)
+                total_f = int(job.get("total_frames") or 0)
+                dur_val = round(total_f / max(1.0, fps_val), 2)
+                projects_dict[fname] = {
+                    "filename": fname,
+                    "resolution": job.get("resolution", "3840 x 2160"),
+                    "fps": round(fps_val, 2),
+                    "duration": dur_val,
+                    "total_frames": total_f,
+                    "keyframes": int(job.get("keyframes") or 0),
+                    "trajectory_points": int(job.get("trajectory_points") or total_f),
+                    "created_at": str(job.get("created_at", "")),
+                    "status": "PROCESSED"
+                }
+    except Exception as e:
+        print(f"[PROJECTS DB ERROR] {e}")
 
     # 2. Check storage/videos and uploads folders
     search_dirs = [VIDEOS_DIR, os.path.join(PROJECT_ROOT, "uploads")]
@@ -1082,7 +1025,7 @@ if __name__ == "__main__":
     import uvicorn
     print("==================================================")
     print(" Aero3D Video Processing FastAPI Backend")
-    print(f" Database: {DB_NAME} ({MONGO_URI})")
+    print(f" Database: {DB_NAME} (backend: {get_store().backend})")
     print(" Serving at: http://localhost:8000")
     print("==================================================")
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -23,6 +23,12 @@ backend/storage/trajectories/*
 backend/storage/stage04/
 backend/storage/*.json
 backend/storage/**/*.json
+backend/storage/*.db
+
+# Secrets / env
+.env
+.env.*
+!.env.example
 
 
 # OS & IDE
