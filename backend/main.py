@@ -33,6 +33,7 @@ from services.video_processor import (process_video_pipeline, get_video_metadata
                                       KEYFRAME_MODES, DEFAULT_KEYFRAME_MODE)
 from services import stage04 as stage04_service
 from services import sfm_local
+from services import fusion
 
 STORAGE_DIR = os.path.join(BACKEND_DIR, "storage")
 VIDEOS_DIR = os.path.join(STORAGE_DIR, "videos")
@@ -1071,6 +1072,48 @@ def stage04_run(project: Optional[str] = None, device: str = "cpu", matcher: str
 @app.get("/api/stage04/run_progress")
 def stage04_run_progress():
     return dict(stage04_progress)
+
+
+# ==========================================
+# 4.9. STAGE 06: DENSE POINT CLOUD (fuse aligned depth maps into a colored .ply)
+# ==========================================
+
+@app.post("/api/stage06/dense")
+def stage06_dense(project: Optional[str] = None, pixel_stride: int = 2):
+    """Fuse the Stage 04 depth maps + poses into one dense colored point cloud (COLMAP units)."""
+    results, slug = _resolve_project(project)
+    stage_dir = _stage04_dir(slug)
+    if not os.path.isfile(os.path.join(stage_dir, "results", "model", "images.txt")):
+        raise HTTPException(status_code=400, detail="Run Stage 04 (pose + depth) first.")
+    out_ply = os.path.join(stage_dir, "dense.ply")
+    try:
+        stats = fusion.build_dense_cloud(stage_dir, _project_keyframes_dir(slug), _project_frames_dir(slug),
+                                         out_ply, pixel_stride=max(1, pixel_stride))
+    except (FileNotFoundError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    stats["units"] = "COLMAP world units (arbitrary scale, not metres); metric scale comes from Stage 07."
+    with open(os.path.join(stage_dir, "dense_info.json"), "w", encoding="utf-8") as f:
+        json.dump(stats, f, indent=2)
+    return {"success": True, **stats}
+
+
+@app.get("/api/stage06/info")
+def stage06_info(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    info_path = os.path.join(_stage04_dir(slug), "dense_info.json")
+    if not os.path.isfile(info_path):
+        raise HTTPException(status_code=404, detail="No dense cloud built yet for this project.")
+    with open(info_path, "r", encoding="utf-8") as f:
+        return {"success": True, **json.load(f)}
+
+
+@app.get("/api/stage06/dense.ply")
+def stage06_download(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    ply = os.path.join(_stage04_dir(slug), "dense.ply")
+    if not os.path.isfile(ply):
+        raise HTTPException(status_code=404, detail="No dense cloud built yet for this project.")
+    return FileResponse(ply, media_type="application/octet-stream", filename=f"{slug}_dense.ply")
 
 
 # ==========================================
