@@ -1,17 +1,20 @@
 import os
 import re
+import math
 import json
 import shutil
 import cv2
 import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
 
+from config import settings
 from .keyframe_sfm import detect_scene_cuts, relative_sharpness_gate, select_sfm_keyframes
 
 COMPARE_WIDTH = 320
 COMPARE_HEIGHT = 180
 SIMILARITY_THRESHOLD = 0.95
 DEFAULT_SHARPNESS_THRESHOLD = 100.0
+STORE_MAX_WIDTH = 1600   # stored frames are capped to this width (disk economy + COLMAP-friendly size)
 
 # "notebook":  the original Colab filter (absolute sharpness cutoff + histogram correlation).
 # "sfm":        overlap-based selection of the sharpest frame per window, accuracy first: consecutive
@@ -180,66 +183,77 @@ def _process_frames(cap, video_path, filename, slug, metadata, storage_dirs,
     prev_kp = None
     prev_des = None
 
-    frame_id = 0
+    # Frame budget: on long / 4K clips, sample every `stride`-th frame so we never write tens of
+    # thousands of full-res JPEGs. Skipped frames are grabbed but NOT decoded (cheap). Sharpness and
+    # trajectory are computed on the sampled frames; each keeps its ORIGINAL video index.
+    budget = max(1, int(getattr(settings, "MAX_FRAMES_ON_DISK", 1500)))
+    stride = max(1, math.ceil(total_frames / budget)) if total_frames > 0 else 1
+    if stride > 1:
+        print(f"[PIPELINE] {total_frames} frames exceed budget {budget}: sampling every {stride} frame(s)")
+
+    pos = 0        # processed-frame position (aligned with blur_scores / frame_transforms / frame_diffs)
+    raw = -1       # original video frame index
 
     while True:
         try:
-            ret, frame = cap.read()
+            grabbed = cap.grab()
         except Exception as err:
-            print(f"[PIPELINE] Video read ended or error at frame {frame_id}: {err}")
+            print(f"[PIPELINE] Video read ended or error near frame {raw}: {err}")
             break
-
-        if not ret or frame is None:
+        if not grabbed:
             break
+        raw += 1
+        if raw % stride != 0:
+            continue                                  # frame budget: skip without decoding
+        ok, frame = cap.retrieve()
+        if not ok or frame is None:
+            continue
 
-        frame_filename = f"frame_{frame_id:04d}.jpg"
+        frame_filename = f"frame_{raw:04d}.jpg"
         frame_path = os.path.join(frames_dir, frame_filename)
 
-        # 1. Save frame to disk for slider inspection
-        cv2.imwrite(frame_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        # 1. Store a width-capped JPEG (disk economy + COLMAP-friendly). Sharpness below is still on full res.
+        if frame.shape[1] > STORE_MAX_WIDTH:
+            sh = max(1, int(frame.shape[0] * (STORE_MAX_WIDTH / frame.shape[1])))
+            store_img = cv2.resize(frame, (STORE_MAX_WIDTH, sh), interpolation=cv2.INTER_AREA)
+        else:
+            store_img = frame
+        cv2.imwrite(frame_path, store_img, [cv2.IMWRITE_JPEG_QUALITY, 88])
         all_frame_paths.append(frame_path)
 
         # 2. Exact Laplacian Sharpness Score on Full-Resolution Grayscale (Matches Snippet 1)
-        # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # sharpness = cv2.Laplacian(gray, cv2.CV_64F).var()
         gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         sharpness = float(cv2.Laplacian(gray_full, cv2.CV_64F).var())
 
-        frame_numbers.append(frame_id)
+        frame_numbers.append(raw)
         blur_scores.append(sharpness)
 
-        t_sec = round(frame_id / fps, 2)
+        t_sec = round(raw / fps, 2)
         frame_items.append({
-            "frame_index": frame_id,
-            "frame_number": frame_id + 1,
+            "frame_index": raw,
+            "frame_number": raw + 1,
             "timestamp": t_sec,
             "sharpness": round(sharpness, 2),
             "filename": frame_filename,
-            "url": f"/api/frames/{frame_id}"
+            "url": f"/api/frames/{raw}"
         })
 
-        # 3. Blur Filtering & Visual Redundancy Keyframe Selection (Matches Snippet 2 & 3)
-        #    (the "sfm" modes select after the pass, from the per-frame motion collected below)
+        # 3. Blur Filtering & Visual Redundancy Keyframe Selection (notebook mode; sfm selects after the pass)
         if keyframe_mode == "notebook" and sharpness >= sharpness_threshold:
-            selected_sharp_frames.append((frame_id, sharpness))
-
-            # Visual redundancy filtering using normalized histogram correlation
+            selected_sharp_frames.append((raw, sharpness))
             current_prep = prepare_frame_for_comparison(frame)
-
             if previous_keyframe_prep is None:
-                # First frame is automatically selected
-                visual_keyframes.append((frame_id, sharpness))
+                visual_keyframes.append((raw, sharpness))
                 previous_keyframe_prep = current_prep
             else:
                 hist_prev = cv2.calcHist([previous_keyframe_prep], [0], None, [256], [0, 256])
                 hist_curr = cv2.calcHist([current_prep], [0], None, [256], [0, 256])
                 similarity = cv2.compareHist(hist_prev, hist_curr, cv2.HISTCMP_CORREL)
-
                 if similarity < similarity_threshold:
-                    visual_keyframes.append((frame_id, sharpness))
+                    visual_keyframes.append((raw, sharpness))
                     previous_keyframe_prep = current_prep
 
-        # 4. Camera Trajectory Estimation on ALL frames
+        # 4. Camera trajectory / motion between consecutive SAMPLED frames
         gray_work = cv2.resize(gray_full, (work_w, work_h)) if work_w != orig_w else gray_full
         curr_kp, curr_des = orb.detectAndCompute(gray_work, None)
 
@@ -249,7 +263,7 @@ def _process_frames(cap, video_path, filename, slug, metadata, storage_dirs,
         prev_tiny = tiny
 
         frame_M = None
-        if frame_id == 0:
+        if pos == 0:
             prev_kp = curr_kp
             prev_des = curr_des
         else:
@@ -286,37 +300,35 @@ def _process_frames(cap, video_path, filename, slug, metadata, storage_dirs,
             prev_kp = curr_kp
             prev_des = curr_des
 
-        # Cleanup frame buffer
-        del frame
-        del gray_full
-        del gray_work
-
-        frame_id += 1
-
-        if frame_id % 100 == 0:
+        del frame, gray_full, gray_work
+        pos += 1
+        if pos % 100 == 0:
             gc.collect()
 
         # Periodic progress update
-        if frame_id % 25 == 0 or frame_id == total_frames:
-            pct = min(95, int((frame_id / total_frames) * 90) + 5)
+        if pos % 25 == 0:
+            pct = min(95, int((raw / max(1, total_frames)) * 90) + 5)
             pipeline_progress["percent"] = pct
-            pipeline_progress["current_frame"] = frame_id
-            pipeline_progress["stage"] = f"Extracting, scoring sharpness & computing trajectory ({frame_id}/{total_frames})"
-            pipeline_progress["message"] = f"{pct}% · {frame_id} of {total_frames} frames processed"
+            pipeline_progress["current_frame"] = raw
+            pipeline_progress["stage"] = f"Extracting, scoring sharpness & computing trajectory ({raw}/{total_frames})"
+            pipeline_progress["message"] = f"{pct}% · frame {raw} of {total_frames} ({pos} kept)"
 
     cap.release()
     gc.collect()
+    video_total = raw + 1 if raw >= 0 else 0
+    frame_id = pos                    # number of frames actually processed/stored
 
-    scene_cuts = detect_scene_cuts(frame_diffs)
+    # Selection works on processed positions; map those back to original video frame indices.
+    scene_cuts = [int(frame_numbers[p]) for p in detect_scene_cuts(frame_diffs) if 0 <= p < len(frame_numbers)]
     keyframe_overlap: Dict[int, Optional[float]] = {}
     keyframe_params: Dict[str, Any] = {}
     if keyframe_mode in SFM_PRESETS:
         target_overlap, min_overlap = sfm_overlaps(keyframe_mode, target_overlap, min_overlap)
         keyframe_params = {"target_overlap": target_overlap, "min_overlap": min_overlap}
         selection = select_sfm_keyframes(frame_transforms, blur_scores, work_w, work_h, target_overlap, min_overlap)
-        visual_keyframes = [(f, blur_scores[f]) for f in selection["keyframes"]]
-        keyframe_overlap = dict(zip(selection["keyframes"], selection["overlaps"]))
-        selected_sharp_frames = [(f, blur_scores[f]) for f in relative_sharpness_gate(blur_scores)]
+        visual_keyframes = [(frame_numbers[p], blur_scores[p]) for p in selection["keyframes"]]
+        keyframe_overlap = {frame_numbers[p]: ov for p, ov in zip(selection["keyframes"], selection["overlaps"])}
+        selected_sharp_frames = [(frame_numbers[p], blur_scores[p]) for p in relative_sharpness_gate(blur_scores)]
     # Adaptive fallback if no frames reached sharpness_threshold
     elif not selected_sharp_frames and blur_scores:
         median_score = float(np.median(blur_scores))
@@ -423,7 +435,8 @@ def _process_frames(cap, video_path, filename, slug, metadata, storage_dirs,
         "fps": metadata["fps"],
         "duration": metadata["duration"],
         "duration_seconds": metadata["duration"],
-        "total_frames": frame_id,
+        "total_frames": video_total,                       # true video length
+        "frame_sample_stride": stride,                     # 1 = every frame kept; >1 = frame budget applied
         "number_of_extracted_frames": len(all_frame_paths),
         "number_of_sharp_frames": len(selected_sharp_frames),
         "number_of_final_keyframes": len(keyframe_records),

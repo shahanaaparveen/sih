@@ -319,11 +319,17 @@ async def get_frame_image_by_index(frame_index: int):
     """
     filename = f"frame_{frame_index:04d}.jpg"
     filepath = os.path.join(active_frames_dir(), filename)
+    if os.path.exists(filepath):
+        return FileResponse(filepath, media_type="image/jpeg")
 
-    if not os.path.exists(filepath):
+    # Frame not stored (frame budget may have sampled it out) -> decode it from the source video.
+    img = load_frame(frame_index)
+    if img is None:
         raise HTTPException(status_code=404, detail=f"Frame {frame_index} not found.")
-
-    return FileResponse(filepath, media_type="image/jpeg")
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to encode frame.")
+    return Response(content=buf.tobytes(), media_type="image/jpeg")
 
 @app.get("/api/keyframes/{keyframe_index}")
 async def get_keyframe_image_by_index(keyframe_index: int):
@@ -451,9 +457,10 @@ async def get_video_frame_info(frame: int = 0):
     Returns detailed frame info: frame number, timestamp, and sharpness score.
     """
     if latest_results and "frames" in latest_results:
-        frames_list = latest_results["frames"]
-        if 0 <= frame < len(frames_list):
-            return frames_list[frame]
+        # frames may be sampled (frame budget), so match on frame_index rather than list position
+        match = next((f for f in latest_results["frames"] if f.get("frame_index") == frame), None)
+        if match:
+            return match
 
     sharpness = 0.0
     img = load_frame(frame)
