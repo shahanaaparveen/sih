@@ -1,6 +1,37 @@
-fastapi>=0.100.0
-uvicorn>=0.22.0
-python-multipart>=0.0.6
-opencv-python>=4.8.0
-numpy>=1.24.0
-pymongo>=4.5.0
+# Aero3D OnePass — CPU-only dependency set (Windows, Python 3.11)
+# Install order (see ROADMAP.md P0.3):
+#   1) pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   2) pip install -r backend/requirements.txt
+# torch is intentionally NOT listed here so the CPU wheel from the index above is used
+# (listing it plainly would let the resolver pull a CUDA build).
+
+# --- Web / API ---
+fastapi>=0.110,<0.116
+uvicorn[standard]>=0.27,<0.35
+python-multipart>=0.0.9
+pydantic-settings>=2.1,<3.0
+python-dotenv>=1.0
+
+# --- Core CV / math (numpy pinned <2 for pycolmap/open3d/laspy compatibility) ---
+numpy==1.26.4
+opencv-python>=4.8,<4.11
+
+# --- Structure-from-Motion (camera pose + sparse cloud), CPU wheels ---
+pycolmap>=3.10
+
+# --- AI depth (Depth Anything V2 Small = Apache-2.0; Large is non-commercial, do not use) ---
+transformers>=4.40,<4.46
+
+# --- Dynamic-object masking ---
+ultralytics>=8.1,<8.4
+
+# --- Dense cloud / meshing ---
+open3d>=0.18,<0.19
+
+# --- Exports ---
+laspy>=2.5           # LAS point cloud
+trimesh>=4.0         # OBJ / mesh utils
+pygltflib>=1.16      # GLB
+
+# --- Data layer ---
+supabase>=2.4,<3.0
