@@ -35,6 +35,7 @@ from services import stage04 as stage04_service
 from services import sfm_local
 from services import fusion
 from services import georef
+from services import exporter
 
 STORAGE_DIR = os.path.join(BACKEND_DIR, "storage")
 VIDEOS_DIR = os.path.join(STORAGE_DIR, "videos")
@@ -1162,6 +1163,55 @@ def stage07_metric_ply(project: Optional[str] = None):
     if not os.path.isfile(p):
         raise HTTPException(status_code=404, detail="No metric cloud yet; run georeferencing first.")
     return FileResponse(p, media_type="application/octet-stream", filename=f"{slug}_dense_metric.ply")
+
+
+@app.get("/api/stage07/track.geojson")
+def stage07_track(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    out = os.path.join(_stage04_dir(slug), "track.geojson")
+    try:
+        exporter.export_camera_track_geojson(_stage04_dir(slug), out)
+    except (RuntimeError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return FileResponse(out, media_type="application/geo+json", filename=f"{slug}_track.geojson")
+
+
+# ==========================================
+# 4.11. EXPORTS & DENSE-CLOUD PREVIEW
+# ==========================================
+
+@app.get("/api/stage06/dense.las")
+def stage06_las(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    ply = os.path.join(_stage04_dir(slug), "dense.ply")
+    if not os.path.isfile(ply):
+        raise HTTPException(status_code=404, detail="Build the dense cloud first.")
+    out = os.path.join(_stage04_dir(slug), "dense.las")
+    try:
+        exporter.export_las(ply, out)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return FileResponse(out, media_type="application/octet-stream", filename=f"{slug}_dense.las")
+
+
+@app.get("/api/stage06/preview")
+def stage06_preview(project: Optional[str] = None, max_points: int = 60000):
+    """Downsampled dense cloud as JSON (points + colors) for the in-app 3D viewer."""
+    _, slug = _resolve_project(project)
+    ply = os.path.join(_stage04_dir(slug), "dense.ply")
+    if not os.path.isfile(ply):
+        raise HTTPException(status_code=404, detail="Build the dense cloud first.")
+    import open3d as o3d
+    pcd = o3d.io.read_point_cloud(ply)
+    P = np.asarray(pcd.points)
+    C = np.asarray(pcd.colors)
+    cap = max(1000, min(max_points, 150000))
+    if len(P) > cap:
+        idx = np.sort(np.random.default_rng(0).choice(len(P), cap, replace=False))
+        P, C = P[idx], C[idx]
+    return {"success": True, "point_count": int(len(P)), "total_points": int(len(pcd.points)),
+            "points": [round(float(v), 4) for v in P.ravel()],
+            "colors": [int(v) for v in np.clip(C.ravel() * 255, 0, 255).astype(int)]}
 
 
 # ==========================================
