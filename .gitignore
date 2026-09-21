@@ -20,6 +20,7 @@ backend/storage/keyframes/*
 !backend/storage/keyframes/.gitkeep
 backend/storage/trajectories/*
 !backend/storage/trajectories/.gitkeep
+backend/storage/stage04/
 backend/storage/*.json
 backend/storage/**/*.json
 

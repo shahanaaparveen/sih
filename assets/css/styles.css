@@ -2967,3 +2967,70 @@ input:checked + .slider-toggle:before {
   margin-top: 2px;
 }
 
+/* Marks UI that is a mock-up rather than a working pipeline stage */
+.demo-pill {
+  background: #e2e8f0;
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+}
+
+.demo-badge {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #f59e0b;
+  margin-left: 8px;
+}
+
+/* ===== Stage 04: Camera Pose & Depth ===== */
+.s04-panel { padding: 24px; background: var(--bg-card); border: var(--border-thick); box-shadow: var(--shadow-lg); border-radius: var(--radius-main); }
+.s04-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; padding-bottom: 14px; border-bottom: var(--border-main); }
+.s04-title { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.3px; color: var(--ink-black); }
+.s04-tag { font-family: var(--font-mono); font-size: 11px; font-weight: 900; background: var(--accent-yellow); border: 1.5px solid #000; box-shadow: 1.5px 1.5px 0 #000; border-radius: 999px; padding: 2px 8px; vertical-align: middle; margin-left: 6px; }
+.s04-sub { margin: 6px 0 0; max-width: 760px; font-size: 13px; color: var(--ink-muted); line-height: 1.5; }
+.s04-project { font-family: var(--font-mono); font-size: 12px; font-weight: 800; background: var(--bg-card-alt); border: var(--border-thin); border-radius: var(--radius-sm); padding: 6px 10px; }
+.s04-steps { list-style: none; margin: 0 0 16px; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 1100px) { .s04-steps { grid-template-columns: 1fr; } }
+.s04-step { display: flex; gap: 12px; background: var(--bg-card-alt); border: var(--border-thin); box-shadow: 2px 2px 0 #000; border-radius: var(--radius-sm); padding: 14px; }
+.s04-step.done { background: var(--accent-green-soft); }
+.s04-step-num { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-orange); color: #fff; border: 2px solid #000; font-weight: 900; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+.s04-step.done .s04-step-num { background: var(--accent-green); color: #000; }
+.s04-step-body { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
+.s04-step-body small { font-size: 12px; color: var(--ink-muted); line-height: 1.45; }
+.s04-step-body code { font-family: var(--font-mono); font-size: 11.5px; background: #fff; border: 1px solid #000; border-radius: 4px; padding: 0 4px; }
+.s04-btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.s04-link-btn { text-decoration: none; display: inline-block; }
+.s04-message { border: var(--border-thin); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13px; font-weight: 600; margin-bottom: 14px; background: var(--accent-yellow-soft); }
+.s04-message.error { background: #fee2e2; }
+.s04-message.ok { background: var(--accent-green-soft); }
+.s04-verdict-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+.s04-verdict { font-family: var(--font-mono); font-size: 12px; font-weight: 900; padding: 4px 12px; border: 2px solid #000; border-radius: 999px; box-shadow: 2px 2px 0 #000; text-transform: uppercase; }
+.s04-verdict.good { background: var(--accent-green); }
+.s04-verdict.fair { background: var(--accent-yellow); }
+.s04-verdict.poor { background: #ff6b6b; }
+.s04-verdict-note { font-size: 12.5px; color: var(--ink-muted); }
+.s04-warnings { margin: 0 0 14px; padding-left: 18px; font-size: 12.5px; color: #92400e; }
+.s04-warnings:empty { display: none; }
+.s04-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.s04-metrics .dash-metric-card small { font-size: 11px; color: var(--ink-muted); }
+.s04-viewer-wrap { background: #020617; border: var(--border-thin); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 18px; }
+#s04Canvas { display: block; width: 100%; height: 460px; cursor: grab; touch-action: none; }
+#s04Canvas:active { cursor: grabbing; }
+.s04-viewer-bar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 8px 14px; background: #0b1220; color: #cbd5e1; font-size: 12px; }
+.s04-viewer-bar label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.s04-scene-info { font-family: var(--font-mono); color: #94a3b8; }
+.s04-hint { margin-left: auto; color: #64748b; }
+.s04-depth { border: var(--border-thin); border-radius: var(--radius-sm); padding: 14px; background: #fff; box-shadow: 2px 2px 0 #000; }
+.s04-depth-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+.s04-depth-title { font-family: var(--font-mono); font-size: 12px; font-weight: 800; color: var(--accent-orange); }
+.s04-depth-slider input { width: 100%; margin: 10px 0; }
+.s04-depth-imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 800px) { .s04-depth-imgs { grid-template-columns: 1fr; } }
+.s04-depth-imgs figure { margin: 0; background: #020617; border-radius: 6px; overflow: hidden; }
+.s04-depth-imgs img { display: block; width: 100%; height: auto; min-height: 60px; }
+.s04-depth-imgs figcaption { color: #cbd5e1; font-size: 11.5px; padding: 6px 10px; font-family: var(--font-mono); }
+.s04-units { margin: 14px 0 0; font-size: 12px; color: var(--ink-muted); }
+
+/* Stage 02 keyframe-mode selector on the upload page */
+.keyframe-mode-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; padding: 12px 14px; background: var(--bg-card-alt); border: var(--border-thin); border-radius: var(--radius-sm); }
+.keyframe-mode-select { font-family: var(--font-heading); font-weight: 700; font-size: 13px; padding: 7px 10px; border: var(--border-thin); border-radius: var(--radius-sm); background: #fff; }
+.keyframe-mode-row small { flex-basis: 100%; font-size: 12px; color: var(--ink-muted); }

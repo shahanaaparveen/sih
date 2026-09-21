@@ -121,7 +121,7 @@
                   <polyline points="2 12 12 17 22 12"/>
                 </svg>
               </div>
-              <span class="workflow-nav-text">AI Depth Estimation</span>
+              <span class="workflow-nav-text">Pose &amp; Depth</span>
             </button>
 
             <!-- 6. Georeferencing -->
@@ -134,6 +134,7 @@
                 </svg>
               </div>
               <span class="workflow-nav-text">Georeferencing</span>
+              <span class="projects-count-pill demo-pill" title="Not implemented yet: this view is a UI mock-up">DEMO</span>
             </button>
 
             <!-- 7. 3D Model Generation -->
@@ -146,6 +147,7 @@
                 </svg>
               </div>
               <span class="workflow-nav-text">3D Model Generation</span>
+              <span class="projects-count-pill demo-pill" title="Not implemented yet: this view is a UI mock-up">DEMO</span>
             </button>
           </nav>
         </aside>
@@ -518,6 +520,89 @@
             </div>
           </section>
 
+          <!-- STAGE 04: CAMERA POSE (COLMAP) + DEPTH (Depth Anything V2). Rendered/controlled by assets/js/stage04.js -->
+          <section id="stage04Section" class="s04-section" style="display: none; width: 100%; margin-bottom: 24px;">
+            <div class="panel s04-panel">
+              <div class="s04-header">
+                <div>
+                  <h2 class="s04-title">Camera Pose &amp; Depth <span class="s04-tag">STAGE 04</span></h2>
+                  <p class="s04-sub">Solves a 6-DoF camera pose for every keyframe with <b>COLMAP</b> and estimates a depth map for each with <b>Depth Anything V2</b>. The heavy compute runs on a free Colab GPU: export the package, run the notebook, import the results.</p>
+                </div>
+                <div id="s04Project" class="s04-project">--</div>
+              </div>
+
+              <ol class="s04-steps">
+                <li class="s04-step" id="s04Step1">
+                  <span class="s04-step-num">1</span>
+                  <div class="s04-step-body">
+                    <b>Export package</b>
+                    <small id="s04ExportInfo">Checking keyframes...</small>
+                    <button type="button" id="s04ExportBtn" class="primary-btn sm-btn" disabled>Download package (.zip)</button>
+                  </div>
+                </li>
+                <li class="s04-step" id="s04Step2">
+                  <span class="s04-step-num">2</span>
+                  <div class="s04-step-body">
+                    <b>Run in Colab (T4 GPU)</b>
+                    <small>Open the notebook in Colab, upload the package, run all cells, download <code>stage04_results.zip</code>.</small>
+                    <div class="s04-btn-row">
+                      <a id="s04NotebookBtn" class="outline-btn sm-btn s04-link-btn" href="/api/stage04/notebook" download>Download notebook</a>
+                      <a class="outline-btn sm-btn s04-link-btn" href="https://colab.research.google.com/" target="_blank" rel="noopener">Open Colab &#8599;</a>
+                    </div>
+                  </div>
+                </li>
+                <li class="s04-step" id="s04Step3">
+                  <span class="s04-step-num">3</span>
+                  <div class="s04-step-body">
+                    <b>Import results</b>
+                    <small id="s04ImportInfo">Upload <code>stage04_results.zip</code> from Colab.</small>
+                    <input type="file" id="s04ImportInput" accept=".zip,application/zip" style="display: none;">
+                    <button type="button" id="s04ImportBtn" class="primary-btn sm-btn">Import results (.zip)</button>
+                  </div>
+                </li>
+              </ol>
+
+              <div id="s04Message" class="s04-message" style="display: none;"></div>
+
+              <div id="s04Results" style="display: none;">
+                <div class="s04-verdict-row">
+                  <span id="s04Verdict" class="s04-verdict">--</span>
+                  <span id="s04VerdictNote" class="s04-verdict-note"></span>
+                </div>
+                <ul id="s04Warnings" class="s04-warnings"></ul>
+
+                <div id="s04Metrics" class="s04-metrics"></div>
+
+                <div class="s04-viewer-wrap">
+                  <canvas id="s04Canvas"></canvas>
+                  <div class="s04-viewer-bar">
+                    <label><input type="checkbox" id="s04ShowPoints" checked> Sparse points</label>
+                    <label><input type="checkbox" id="s04ShowCameras" checked> Cameras</label>
+                    <label><input type="checkbox" id="s04ShowPath" checked> Flight path</label>
+                    <span id="s04SceneInfo" class="s04-scene-info"></span>
+                    <span class="s04-hint">Drag to orbit &middot; scroll to zoom</span>
+                  </div>
+                </div>
+
+                <div class="s04-depth">
+                  <div class="s04-depth-head">
+                    <b>Keyframe &amp; depth</b>
+                    <span id="s04DepthTitle" class="s04-depth-title">--</span>
+                  </div>
+                  <div class="s04-depth-slider">
+                    <input type="range" id="s04DepthSlider" min="0" max="0" value="0" step="1">
+                  </div>
+                  <div class="s04-depth-imgs">
+                    <figure><img id="s04Rgb" alt="Keyframe"><figcaption>Keyframe (RGB)</figcaption></figure>
+                    <figure><img id="s04DepthImg" alt="Depth map"><figcaption id="s04DepthCaption">Depth map (warm = near)</figcaption></figure>
+                  </div>
+                </div>
+
+                <p id="s04Units" class="s04-units"></p>
+              </div>
+            </div>
+          </section>
+
           <!-- DEDICATED UPLOAD VIDEO SECTION (Visible only when Upload Video workflow is active) -->
           <section id="uploadVideoSection" class="upload-video-section" style="display: none; width: 100%; margin-bottom: 24px;">
             <div id="uploadPanel" class="panel upload-panel" style="background: var(--bg-card); border: var(--border-thick); box-shadow: var(--shadow-lg); border-radius: var(--radius-main); padding: 24px;">
@@ -526,6 +611,17 @@
                   <h2>Video Ingestion</h2>
                   <p class="panel-sub">Select a drone video source to reconstruct 3D model</p>
                 </div>
+              </div>
+
+              <!-- Stage 02 keyframe selection strategy (sent with the upload) -->
+              <div class="keyframe-mode-row">
+                <label for="keyframeModeSelect"><b>Keyframe selection</b></label>
+                <select id="keyframeModeSelect" class="keyframe-mode-select">
+                  <option value="sfm">SfM, accuracy first (dense overlap, recommended for COLMAP)</option>
+                  <option value="sfm_light">SfM, light (about 4x fewer images, faster)</option>
+                  <option value="notebook">Notebook-exact (sharpness cutoff + histogram filter)</option>
+                </select>
+                <small id="keyframeModeHint">Keyframes overlap 88-96% and are the sharpest of their neighbours: the most accurate input for COLMAP.</small>
               </div>
 
               <!-- Direct Drag & Drop or File Browser -->
@@ -691,6 +787,7 @@
                     <circle cx="12" cy="10" r="3"/>
                   </svg>
                   <span>GPS &amp; Flight Metadata</span>
+                  <span class="meta-mini-badge demo-badge">SIMULATED DEMO DATA</span>
                 </div>
               </div>
 
@@ -1170,5 +1267,6 @@ k1=-0.04281 k2=0.01562 p1=0.00018 p2=-0.00009</pre>
     </div>
 
     <script src="assets/js/app.js"></script>
+    <script src="assets/js/stage04.js"></script>
   </body>
 </html>

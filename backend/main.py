@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import shutil
+import threading
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
@@ -14,6 +15,7 @@ if sys.platform == "win32":
         pass
 
 import cv2
+import numpy as np
 import pymongo
 from bson import ObjectId
 from fastapi import FastAPI, File, UploadFile, Query, HTTPException, Response, Request
@@ -27,18 +29,21 @@ PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-from services.video_processor import process_video_pipeline, get_video_metadata, get_current_progress
+from services.video_processor import (process_video_pipeline, get_video_metadata, get_current_progress, project_slug,
+                                      KEYFRAME_MODES, DEFAULT_KEYFRAME_MODE)
 from services.frame_extractor import extract_all_frames
 from services.keyframe_selector import calculate_sharpness, select_keyframes
 from services.trajectory import calculate_camera_trajectory
+from services import stage04 as stage04_service
 
 STORAGE_DIR = os.path.join(BACKEND_DIR, "storage")
 VIDEOS_DIR = os.path.join(STORAGE_DIR, "videos")
 FRAMES_DIR = os.path.join(STORAGE_DIR, "frames")
 KEYFRAMES_DIR = os.path.join(STORAGE_DIR, "keyframes")
 TRAJECTORIES_DIR = os.path.join(STORAGE_DIR, "trajectories")
+STAGE04_STORAGE = os.path.join(STORAGE_DIR, "stage04")
 
-for d in [VIDEOS_DIR, FRAMES_DIR, KEYFRAMES_DIR, TRAJECTORIES_DIR]:
+for d in [VIDEOS_DIR, FRAMES_DIR, KEYFRAMES_DIR, TRAJECTORIES_DIR, STAGE04_STORAGE]:
     os.makedirs(d, exist_ok=True)
 
 STORAGE_CONFIG = {
@@ -143,15 +148,72 @@ def save_cached_results(data: Dict[str, Any]):
 
 
 # ==========================================
+# ACTIVE PROJECT HELPERS (frames/keyframes are stored per project)
+# ==========================================
+
+# Only one video may be processed at a time (pipeline progress is a single global tracker)
+PIPELINE_LOCK = threading.Lock()
+
+def _active_slug() -> Optional[str]:
+    if latest_results:
+        if latest_results.get("project_slug"):
+            return latest_results["project_slug"]
+        if latest_results.get("filename"):
+            return project_slug(latest_results["filename"])
+    return None
+
+def active_frames_dir() -> str:
+    slug = _active_slug()
+    per_project = os.path.join(FRAMES_DIR, slug) if slug else None
+    # Results cached before per-project storage keep their frames directly in FRAMES_DIR
+    return per_project if per_project and os.path.isdir(per_project) else FRAMES_DIR
+
+def active_keyframes_dir() -> str:
+    slug = _active_slug()
+    per_project = os.path.join(KEYFRAMES_DIR, slug) if slug else None
+    return per_project if per_project and os.path.isdir(per_project) else KEYFRAMES_DIR
+
+def active_video_path() -> Optional[str]:
+    if not (latest_results and latest_results.get("filename")):
+        return None
+    safe_name = "".join(c for c in latest_results["filename"] if c.isalnum() or c in "._- ")
+    for base in (VIDEOS_DIR, os.path.join(PROJECT_ROOT, "uploads")):
+        candidate = os.path.join(base, safe_name)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+def load_frame(frame_index: int) -> Optional[np.ndarray]:
+    """
+    Loads a frame of the active project: from its stored JPEG, else straight from the source video.
+    """
+    stored = os.path.join(active_frames_dir(), f"frame_{frame_index:04d}.jpg")
+    if os.path.exists(stored):
+        img = cv2.imread(stored)
+        if img is not None:
+            return img
+    video = active_video_path()
+    if video:
+        cap = cv2.VideoCapture(video)
+        try:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+            ok, img = cap.read()
+            return img if ok else None
+        finally:
+            cap.release()
+    return None
+
+# ==========================================
 # 1. VIDEO PROCESSING API
 # ==========================================
 
 @app.post("/api/process-video")
-async def process_video_endpoint(
+def process_video_endpoint(
     video: Optional[UploadFile] = File(None),
     file: Optional[UploadFile] = File(None),
     sharpness_threshold: float = 100.0,
-    similarity_threshold: float = 0.95
+    similarity_threshold: float = 0.95,
+    keyframe_mode: str = DEFAULT_KEYFRAME_MODE
 ):
     """
     Accepts video upload (multipart/form-data) and runs the complete Colab pipeline:
@@ -163,10 +225,24 @@ async def process_video_endpoint(
     - Calculates camera trajectory using ALL extracted frames
     - Returns structured results
     """
+    # Plain `def` (not `async def`): FastAPI runs it in a worker thread, so the long OpenCV
+    # pass below does not freeze the event loop and /api/progress keeps answering.
     upload_file = video or file
     if not upload_file or not upload_file.filename:
         raise HTTPException(status_code=400, detail="No video file provided in multipart/form-data.")
+    if keyframe_mode not in KEYFRAME_MODES:
+        raise HTTPException(status_code=400, detail=f"keyframe_mode must be one of {list(KEYFRAME_MODES)}.")
 
+    if not PIPELINE_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Another video is already being processed. Please wait for it to finish.")
+    try:
+        return _process_uploaded_video(upload_file, sharpness_threshold, similarity_threshold, keyframe_mode)
+    finally:
+        PIPELINE_LOCK.release()
+
+
+def _process_uploaded_video(upload_file: UploadFile, sharpness_threshold: float, similarity_threshold: float,
+                            keyframe_mode: str):
     filename = upload_file.filename
     clean_filename = "".join(c for c in filename if c.isalnum() or c in "._- ")
     target_path = os.path.join(VIDEOS_DIR, clean_filename)
@@ -187,7 +263,8 @@ async def process_video_endpoint(
             filename=clean_filename,
             storage_dirs=STORAGE_CONFIG,
             sharpness_threshold=sharpness_threshold,
-            similarity_threshold=similarity_threshold
+            similarity_threshold=similarity_threshold,
+            keyframe_mode=keyframe_mode
         )
         save_cached_results(results)
 
@@ -214,6 +291,13 @@ async def process_video_endpoint(
     except Exception as e:
         import traceback
         traceback.print_exc()
+        # A failed run must not leave an unprocessable file behind as a phantom "READY" project
+        try:
+            os.remove(target_path)
+        except OSError:
+            pass
+        for base in (FRAMES_DIR, KEYFRAMES_DIR):
+            shutil.rmtree(os.path.join(base, project_slug(clean_filename)), ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Pipeline processing failed: {e}")
 
 @app.get("/api/progress")
@@ -225,11 +309,11 @@ async def get_pipeline_progress():
 
 # Backward-compatible upload endpoint
 @app.post("/api/video/upload")
-async def legacy_upload_video(
+def legacy_upload_video(
     video: Optional[UploadFile] = File(None),
     file: Optional[UploadFile] = File(None)
 ):
-    return await process_video_endpoint(video=video, file=file)
+    return process_video_endpoint(video=video, file=file)
 
 # ==========================================
 # 2. FRAME & KEYFRAME ACCESS ENDPOINTS
@@ -241,7 +325,7 @@ async def get_frame_image_by_index(frame_index: int):
     Returns the exact image for extracted frame at frame_index (0-indexed).
     """
     filename = f"frame_{frame_index:04d}.jpg"
-    filepath = os.path.join(FRAMES_DIR, filename)
+    filepath = os.path.join(active_frames_dir(), filename)
 
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail=f"Frame {frame_index} not found.")
@@ -265,21 +349,22 @@ async def get_keyframe_image_by_index(keyframe_index: int):
 
             orig_frame = kfs[keyframe_index].get("frame_index")
             if orig_frame is not None:
-                source_path = os.path.join(FRAMES_DIR, f"frame_{orig_frame:04d}.jpg")
+                source_path = os.path.join(active_frames_dir(), f"frame_{orig_frame:04d}.jpg")
                 if os.path.exists(source_path):
                     return FileResponse(source_path, media_type="image/jpeg")
 
     # Check keyframes directory by prefix
     prefix = f"keyframe_{keyframe_index:04d}_"
-    if os.path.exists(KEYFRAMES_DIR):
-        for fname in sorted(os.listdir(KEYFRAMES_DIR)):
+    kf_dir = active_keyframes_dir()
+    if os.path.exists(kf_dir):
+        for fname in sorted(os.listdir(kf_dir)):
             if fname.startswith(prefix):
-                return FileResponse(os.path.join(KEYFRAMES_DIR, fname), media_type="image/jpeg")
+                return FileResponse(os.path.join(kf_dir, fname), media_type="image/jpeg")
 
     # Fallback to selected_frames
     if latest_results and "selected_frames" in latest_results and keyframe_index < len(latest_results["selected_frames"]):
         orig_frame = latest_results["selected_frames"][keyframe_index].get("frame_index", keyframe_index)
-        frame_path = os.path.join(FRAMES_DIR, f"frame_{orig_frame:04d}.jpg")
+        frame_path = os.path.join(active_frames_dir(), f"frame_{orig_frame:04d}.jpg")
         if os.path.exists(frame_path):
             return FileResponse(frame_path, media_type="image/jpeg")
 
@@ -342,15 +427,30 @@ async def get_selected_keyframe_endpoint(
 @app.get("/api/video/frame_image")
 async def get_video_frame_image(frame: int = 0, width: int = 0):
     """
-    Returns frame image by query param (compatible with existing frontend requests).
+    Returns frame image by query param, downscaled to `width` px when it is larger
+    (stored frames are full resolution). Falls back to the source video if the JPEG is gone.
     """
-    filename = f"frame_{frame:04d}.jpg"
-    filepath = os.path.join(FRAMES_DIR, filename)
-
-    if not os.path.exists(filepath):
+    if frame < 0:
         raise HTTPException(status_code=404, detail=f"Frame {frame} not found.")
 
-    return FileResponse(filepath, media_type="image/jpeg")
+    filepath = os.path.join(active_frames_dir(), f"frame_{frame:04d}.jpg")
+    if width <= 0 and os.path.exists(filepath):
+        return FileResponse(filepath, media_type="image/jpeg")
+
+    img = load_frame(frame)
+    if img is None:
+        raise HTTPException(status_code=404, detail=f"Frame {frame} not found.")
+
+    if width > 0 and img.shape[1] > width:
+        new_h = max(1, int(img.shape[0] * (width / img.shape[1])))
+        img = cv2.resize(img, (width, new_h), interpolation=cv2.INTER_AREA)
+    elif os.path.exists(filepath):
+        return FileResponse(filepath, media_type="image/jpeg")
+
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to encode frame.")
+    return Response(content=buf.tobytes(), media_type="image/jpeg")
 
 @app.get("/api/video/frame_info")
 async def get_video_frame_info(frame: int = 0):
@@ -362,14 +462,11 @@ async def get_video_frame_info(frame: int = 0):
         if 0 <= frame < len(frames_list):
             return frames_list[frame]
 
-    filename = f"frame_{frame:04d}.jpg"
-    filepath = os.path.join(FRAMES_DIR, filename)
     sharpness = 0.0
-    if os.path.exists(filepath):
-        img = cv2.imread(filepath)
-        if img is not None:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    img = load_frame(frame)
+    if img is not None:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
     fps = latest_results.get("fps", 30.0) if latest_results else 30.0
     t_sec = round(frame / fps, 2) if fps > 0 else 0.0
@@ -456,7 +553,8 @@ async def get_video_keyframes_endpoint(
         }
 
     # If no cached results, look in keyframes dir
-    files = sorted([f for f in os.listdir(KEYFRAMES_DIR) if f.endswith(".jpg")]) if os.path.exists(KEYFRAMES_DIR) else []
+    kf_dir = active_keyframes_dir()
+    files = sorted([f for f in os.listdir(kf_dir) if f.endswith(".jpg")]) if os.path.exists(kf_dir) else []
     kfs = []
     for idx, fname in enumerate(files):
         kfs.append({
@@ -493,7 +591,8 @@ async def get_trajectory_endpoint():
             "trajectory": latest_results.get("trajectory", [])
         }
 
-    traj_path = os.path.join(TRAJECTORIES_DIR, "trajectory.json")
+    slug = _active_slug()
+    traj_path = os.path.join(TRAJECTORIES_DIR, f"{slug}.json") if slug else os.path.join(TRAJECTORIES_DIR, "trajectory.json")
     if os.path.exists(traj_path):
         with open(traj_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -521,12 +620,14 @@ async def health_check():
         except Exception:
             mongo_ok = False
 
-    total_extracted = len([f for f in os.listdir(FRAMES_DIR) if f.endswith(".jpg")])
-    total_kf = len([f for f in os.listdir(KEYFRAMES_DIR) if f.endswith(".jpg")])
+    total_extracted = len([f for f in os.listdir(active_frames_dir()) if f.endswith(".jpg")])
+    total_kf = len([f for f in os.listdir(active_keyframes_dir()) if f.endswith(".jpg")])
 
     return {
         "status": "ONLINE",
         "backend": "FastAPI",
+        "keyframe_modes": list(KEYFRAME_MODES),
+        "default_keyframe_mode": DEFAULT_KEYFRAME_MODE,
         "mongodb_connected": mongo_ok,
         "mongodb_uri": MONGO_URI,
         "database": DB_NAME,
@@ -817,6 +918,139 @@ async def select_project_endpoint(filename: str = Query(...)):
 
 
 # ==========================================
+# 4.8. STAGE 04: CAMERA POSE (COLMAP) + DEPTH  (heavy compute runs in Colab)
+# ==========================================
+
+def _resolve_project(project: Optional[str]):
+    """(results, slug) for the named project, or the active one when `project` is omitted."""
+    results = None
+    if project:
+        if latest_results and latest_results.get("filename") == project:
+            results = latest_results
+        else:
+            cache = get_project_cache_path(project)
+            if os.path.exists(cache):
+                with open(cache, "r", encoding="utf-8") as f:
+                    results = json.load(f)
+    else:
+        results = latest_results
+    if not results or not results.get("keyframes"):
+        raise HTTPException(status_code=404, detail="No processed project with keyframes. Upload and process a video first.")
+    return results, results.get("project_slug") or project_slug(results["filename"])
+
+
+def _stage04_dir(slug: str) -> str:
+    return os.path.join(STAGE04_STORAGE, slug)
+
+
+def _project_keyframes_dir(slug: str) -> str:
+    per_project = os.path.join(KEYFRAMES_DIR, slug)
+    return per_project if os.path.isdir(per_project) else KEYFRAMES_DIR
+
+
+def _project_frames_dir(slug: str) -> str:
+    per_project = os.path.join(FRAMES_DIR, slug)
+    return per_project if os.path.isdir(per_project) else FRAMES_DIR
+
+
+@app.get("/api/stage04/status")
+def stage04_status(project: Optional[str] = None):
+    results, slug = _resolve_project(project)
+    summary_path = os.path.join(_stage04_dir(slug), "summary.json")
+    summary = None
+    if os.path.isfile(summary_path):
+        with open(summary_path, "r", encoding="utf-8") as f:
+            summary = json.load(f)
+    return {"success": True, "project": results["filename"], "project_slug": slug,
+            "keyframes": len(results["keyframes"]), "results_imported": summary is not None,
+            "summary": summary}
+
+
+@app.get("/api/stage04/notebook")
+def stage04_notebook():
+    if not os.path.isfile(stage04_service.NOTEBOOK_PATH):
+        raise HTTPException(status_code=404, detail="Colab notebook is missing from the backend.")
+    return FileResponse(stage04_service.NOTEBOOK_PATH, media_type="application/x-ipynb+json",
+                        filename="aero3d_stage04_colab.ipynb")
+
+
+@app.get("/api/stage04/export")
+def stage04_export(project: Optional[str] = None):
+    """Builds and downloads the package (keyframes + manifest + scripts) to run in Colab."""
+    results, slug = _resolve_project(project)
+    out_zip = os.path.join(_stage04_dir(slug), f"aero3d_stage04_{slug}.zip")
+    try:
+        stage04_service.export_package(results, _project_keyframes_dir(slug), _project_frames_dir(slug), out_zip, slug)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return FileResponse(out_zip, media_type="application/zip", filename=os.path.basename(out_zip))
+
+
+@app.get("/api/stage04/export_info")
+def stage04_export_info(project: Optional[str] = None):
+    """Same checks as the export, without building the zip: keyframe count, gap warnings."""
+    results, slug = _resolve_project(project)
+    kfs = results["keyframes"]
+    on_disk = [k for k in kfs if k.get("filename") and os.path.isfile(os.path.join(_project_keyframes_dir(slug), k["filename"]))]
+    gaps = stage04_service._gap_stats(on_disk) if on_disk else {}
+    fills = stage04_service.plan_gap_fills(on_disk, results.get("frames") or [], _project_frames_dir(slug)) if on_disk else []
+    return {"success": True, "project": results["filename"], "keyframes": len(kfs), "keyframes_on_disk": len(on_disk),
+            "gap_fill_frames": len(fills),
+            "ready": len(on_disk) >= stage04_service.MIN_KEYFRAMES, "keyframe_gaps": gaps,
+            "min_keyframes": stage04_service.MIN_KEYFRAMES}
+
+
+@app.post("/api/stage04/import")
+def stage04_import(file: UploadFile = File(...), project: Optional[str] = None):
+    """Imports stage04_results.zip produced by the Colab notebook."""
+    results, slug = _resolve_project(project)
+    stage_dir = _stage04_dir(slug)
+    os.makedirs(stage_dir, exist_ok=True)
+    incoming = os.path.join(stage_dir, "incoming.zip")
+    try:
+        with open(incoming, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        summary = stage04_service.import_results(stage_dir, slug, len(results["keyframes"]), incoming)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        try:
+            os.remove(incoming)
+        except OSError:
+            pass
+    return {"success": True, "summary": summary}
+
+
+@app.get("/api/stage04/scene")
+def stage04_scene(project: Optional[str] = None, max_points: int = 25000):
+    _, slug = _resolve_project(project)
+    try:
+        scene = stage04_service.load_scene(_stage04_dir(slug), max(1000, min(max_points, 100000)))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"success": True, **scene}
+
+
+@app.get("/api/stage04/depth/{frame_index}")
+def stage04_depth_preview(frame_index: int, project: Optional[str] = None):
+    """Depth preview for a video frame index (0-based); covers keyframes and gap-fill frames."""
+    _, slug = _resolve_project(project)
+    path = stage04_service.depth_preview_path(_stage04_dir(slug), frame_index)
+    if not path:
+        raise HTTPException(status_code=404, detail=f"No depth map for frame {frame_index}.")
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@app.get("/api/stage04/depth_info/{frame_index}")
+def stage04_depth_info(frame_index: int, project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    info = stage04_service.depth_info(_stage04_dir(slug), frame_index)
+    if not info:
+        raise HTTPException(status_code=404, detail=f"No depth report entry for frame {frame_index}.")
+    return {"success": True, **info}
+
+
+# ==========================================
 # 5. STATIC FILES & FRONTEND HOSTING
 # ==========================================
 
@@ -831,10 +1065,16 @@ if os.path.exists(UPLOAD_DIR):
 async def serve_index():
     return FileResponse(os.path.join(PROJECT_ROOT, "index.html"))
 
+ROOT_STATIC_EXTENSIONS = {".html", ".ico", ".png", ".svg", ".jpg", ".webmanifest"}
+
 @app.get("/{filename}")
 async def serve_root_file(filename: str):
-    target = os.path.join(PROJECT_ROOT, filename)
-    if os.path.isfile(target):
+    # Only plain static frontend files directly inside the project root; never source,
+    # git metadata or anything reached through backslashes / ".." segments.
+    target = os.path.realpath(os.path.join(PROJECT_ROOT, filename))
+    if (os.path.dirname(target) == os.path.realpath(PROJECT_ROOT)
+            and os.path.isfile(target)
+            and os.path.splitext(target)[1].lower() in ROOT_STATIC_EXTENSIONS):
         return FileResponse(target)
     return FileResponse(os.path.join(PROJECT_ROOT, "index.html"))
 

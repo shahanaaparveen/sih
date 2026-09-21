@@ -1,13 +1,34 @@
 import os
+import re
 import json
+import shutil
 import cv2
 import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
+
+from .keyframe_sfm import detect_scene_cuts, relative_sharpness_gate, select_sfm_keyframes
 
 COMPARE_WIDTH = 320
 COMPARE_HEIGHT = 180
 SIMILARITY_THRESHOLD = 0.95
 DEFAULT_SHARPNESS_THRESHOLD = 100.0
+
+# "notebook":  the original Colab filter (absolute sharpness cutoff + histogram correlation).
+# "sfm":        overlap-based selection of the sharpest frame per window, accuracy first: consecutive
+#               keyframes overlap 88-96%.
+# "sfm_light":  the same with 65-85% overlap: about 4x fewer images, much faster COLMAP, a little less accurate.
+# (see services/keyframe_sfm.py; presets chosen by measuring pose error against ground truth, see
+#  scratch/compare_keyframe_modes.py)
+SFM_PRESETS = {"sfm": (0.96, 0.88), "sfm_light": (0.85, 0.65)}   # (target_overlap, min_overlap)
+KEYFRAME_MODES = ("notebook",) + tuple(SFM_PRESETS)
+DEFAULT_KEYFRAME_MODE = "sfm"
+
+
+def sfm_overlaps(mode: str, target_overlap: Optional[float] = None, min_overlap: Optional[float] = None) -> Tuple[float, float]:
+    """Overlap band for an SfM mode; explicit values override the preset."""
+    preset_target, preset_min = SFM_PRESETS[mode]
+    return (preset_target if target_overlap is None else target_overlap,
+            preset_min if min_overlap is None else min_overlap)
 
 # Global thread-safe progress tracker for frontend status
 pipeline_progress = {
@@ -21,6 +42,13 @@ pipeline_progress = {
 
 def get_current_progress() -> Dict[str, Any]:
     return dict(pipeline_progress)
+
+def project_slug(filename: str) -> str:
+    """
+    Filesystem-safe per-project folder name, so every video keeps its own frames/keyframes.
+    """
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", filename or "").strip(".")
+    return safe or "video"
 
 def get_video_metadata(video_path: str, filename: str) -> Dict[str, Any]:
     """
@@ -59,34 +87,33 @@ def prepare_frame_for_comparison(frame: np.ndarray) -> np.ndarray:
     equalized = cv2.equalizeHist(gray)
     return equalized
 
-def process_video_pipeline(
+def _run_pipeline(
     video_path: str,
     filename: str,
     storage_dirs: Dict[str, str],
     sharpness_threshold: float = DEFAULT_SHARPNESS_THRESHOLD,
-    similarity_threshold: float = SIMILARITY_THRESHOLD
+    similarity_threshold: float = SIMILARITY_THRESHOLD,
+    keyframe_mode: str = DEFAULT_KEYFRAME_MODE,
+    target_overlap: Optional[float] = None,
+    min_overlap: Optional[float] = None
 ) -> Dict[str, Any]:
     """
     High-Performance Single-Pass Video Pipeline:
     Executes frame extraction, Laplacian sharpness scoring (exact Colab formula),
-    visual redundancy keyframe filtering (histogram correlation < SIMILARITY_THRESHOLD),
-    and camera trajectory across ALL frames in ONE single in-memory pass.
+    keyframe selection (see KEYFRAME_MODES) and camera trajectory across ALL frames in ONE pass.
     """
     global pipeline_progress
-    frames_dir = storage_dirs["frames"]
-    keyframes_dir = storage_dirs["keyframes"]
+    if keyframe_mode not in KEYFRAME_MODES:
+        raise ValueError(f"keyframe_mode must be one of {KEYFRAME_MODES}, got {keyframe_mode!r}")
+    slug = project_slug(filename)
+    frames_dir = os.path.join(storage_dirs["frames"], slug)
+    keyframes_dir = os.path.join(storage_dirs["keyframes"], slug)
     trajectories_dir = storage_dirs["trajectories"]
 
-    # Clear previous frames and keyframes
+    # Re-processing a video replaces only that project's own frames and keyframes
     for d in [frames_dir, keyframes_dir]:
+        shutil.rmtree(d, ignore_errors=True)
         os.makedirs(d, exist_ok=True)
-        for fname in os.listdir(d):
-            fpath = os.path.join(d, fname)
-            if os.path.isfile(fpath):
-                try:
-                    os.remove(fpath)
-                except OSError:
-                    pass
 
     # Step 1: Video Metadata
     metadata = get_video_metadata(video_path, filename)
@@ -106,6 +133,25 @@ def process_video_pipeline(
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video: {video_path}")
 
+    try:
+        return _process_frames(cap, video_path, filename, slug, metadata, storage_dirs,
+                               frames_dir, keyframes_dir, trajectories_dir,
+                               sharpness_threshold, similarity_threshold,
+                               keyframe_mode, target_overlap, min_overlap)
+    finally:
+        cap.release()
+
+
+def _process_frames(cap, video_path, filename, slug, metadata, storage_dirs,
+                    frames_dir, keyframes_dir, trajectories_dir,
+                    sharpness_threshold, similarity_threshold,
+                    keyframe_mode, target_overlap, min_overlap) -> Dict[str, Any]:
+    global pipeline_progress
+    fps = metadata["fps"] if metadata["fps"] > 0 else 30.0
+    total_frames = max(1, metadata["total_frames"])
+    orig_w = metadata["width"]
+    orig_h = metadata["height"]
+
     # ORB Trajectory Detector setup
     work_w = 960 if orig_w > 960 else orig_w
     work_h = int(orig_h * (work_w / orig_w)) if orig_w > 0 else orig_h
@@ -118,6 +164,9 @@ def process_video_pipeline(
     successful_matches = 0
     failed_frames = 0
 
+    frame_diffs = [0.0]         # frame_diffs[i]: mean abs difference between tiny greyscale frames i-1 and i (cut detection)
+    prev_tiny = None
+    frame_transforms = [None]   # frame_transforms[i]: 2x3 similarity mapping frame i-1 -> i (work resolution)
     frame_items = []
     frame_numbers = []
     blur_scores = []
@@ -126,7 +175,6 @@ def process_video_pipeline(
     all_frame_paths = []
 
     import gc
-    import shutil
 
     previous_keyframe_prep = None
     prev_kp = None
@@ -171,7 +219,8 @@ def process_video_pipeline(
         })
 
         # 3. Blur Filtering & Visual Redundancy Keyframe Selection (Matches Snippet 2 & 3)
-        if sharpness >= sharpness_threshold:
+        #    (the "sfm" modes select after the pass, from the per-frame motion collected below)
+        if keyframe_mode == "notebook" and sharpness >= sharpness_threshold:
             selected_sharp_frames.append((frame_id, sharpness))
 
             # Visual redundancy filtering using normalized histogram correlation
@@ -194,6 +243,12 @@ def process_video_pipeline(
         gray_work = cv2.resize(gray_full, (work_w, work_h)) if work_w != orig_w else gray_full
         curr_kp, curr_des = orb.detectAndCompute(gray_work, None)
 
+        tiny = cv2.resize(gray_work, (64, 36), interpolation=cv2.INTER_AREA).astype(np.float32)
+        if prev_tiny is not None:
+            frame_diffs.append(float(np.abs(tiny - prev_tiny).mean()))
+        prev_tiny = tiny
+
+        frame_M = None
         if frame_id == 0:
             prev_kp = curr_kp
             prev_des = curr_des
@@ -210,6 +265,7 @@ def process_video_pipeline(
                         pts2 = np.float32([curr_kp[m.trainIdx].pt for m in matches])
                         M, _ = cv2.estimateAffinePartial2D(pts1, pts2, method=cv2.RANSAC)
                         if M is not None:
+                            frame_M = M
                             dx = float(M[0, 2]) * scale_factor
                             dy = float(M[1, 2]) * scale_factor
                             new_x = float(trajectory[-1]["x"] + dx)
@@ -226,6 +282,7 @@ def process_video_pipeline(
                     trajectory.append(dict(trajectory[-1]))
                     failed_frames += 1
 
+            frame_transforms.append(frame_M)
             prev_kp = curr_kp
             prev_des = curr_des
 
@@ -250,8 +307,18 @@ def process_video_pipeline(
     cap.release()
     gc.collect()
 
+    scene_cuts = detect_scene_cuts(frame_diffs)
+    keyframe_overlap: Dict[int, Optional[float]] = {}
+    keyframe_params: Dict[str, Any] = {}
+    if keyframe_mode in SFM_PRESETS:
+        target_overlap, min_overlap = sfm_overlaps(keyframe_mode, target_overlap, min_overlap)
+        keyframe_params = {"target_overlap": target_overlap, "min_overlap": min_overlap}
+        selection = select_sfm_keyframes(frame_transforms, blur_scores, work_w, work_h, target_overlap, min_overlap)
+        visual_keyframes = [(f, blur_scores[f]) for f in selection["keyframes"]]
+        keyframe_overlap = dict(zip(selection["keyframes"], selection["overlaps"]))
+        selected_sharp_frames = [(f, blur_scores[f]) for f in relative_sharpness_gate(blur_scores)]
     # Adaptive fallback if no frames reached sharpness_threshold
-    if not selected_sharp_frames and blur_scores:
+    elif not selected_sharp_frames and blur_scores:
         median_score = float(np.median(blur_scores))
         selected_sharp_frames = [(fn, s) for fn, s in zip(frame_numbers, blur_scores) if s >= median_score]
         if not visual_keyframes:
@@ -284,6 +351,8 @@ def process_video_pipeline(
             "timestamp_sec": kf_time,
             "sharpness": round(kf_sharpness, 2),
             "title": title,
+            "overlap_with_previous": (None if keyframe_overlap.get(orig_frame_id) is None
+                                      else round(keyframe_overlap[orig_frame_id], 3)),
             "filename": kf_filename,
             "path": kf_path,
             "url": f"/api/keyframes/{keyframe_index}",
@@ -315,7 +384,7 @@ def process_video_pipeline(
         })
 
     # Save trajectory to storage
-    traj_json_path = os.path.join(trajectories_dir, "trajectory.json")
+    traj_json_path = os.path.join(trajectories_dir, f"{slug}.json")
     os.makedirs(trajectories_dir, exist_ok=True)
     with open(traj_json_path, "w", encoding="utf-8") as f:
         json.dump({
@@ -347,6 +416,7 @@ def process_video_pipeline(
     results = {
         "success": True,
         "filename": filename,
+        "project_slug": slug,
         "resolution": metadata["resolution"],
         "width": metadata["width"],
         "height": metadata["height"],
@@ -361,6 +431,9 @@ def process_video_pipeline(
         "successful_trajectory_matches": successful_matches,
         "failed_trajectory_frames": failed_frames,
         "trajectory": trajectory,
+        "keyframe_mode": keyframe_mode,
+        "keyframe_params": keyframe_params,
+        "scene_cuts": scene_cuts,
         "keyframes": keyframe_records,
         "selected_frames": selected_frames_records,
         "frames": frame_items,
@@ -384,3 +457,28 @@ def process_video_pipeline(
     print("Removed redundant frames :", sharpness_summary["removed_redundant_frames"])
 
     return results
+
+
+def process_video_pipeline(
+    video_path: str,
+    filename: str,
+    storage_dirs: Dict[str, str],
+    sharpness_threshold: float = DEFAULT_SHARPNESS_THRESHOLD,
+    similarity_threshold: float = SIMILARITY_THRESHOLD,
+    keyframe_mode: str = DEFAULT_KEYFRAME_MODE,
+    target_overlap: Optional[float] = None,
+    min_overlap: Optional[float] = None
+) -> Dict[str, Any]:
+    """
+    Runs the single-pass pipeline and keeps pipeline_progress truthful on failure.
+    """
+    try:
+        return _run_pipeline(video_path, filename, storage_dirs, sharpness_threshold, similarity_threshold,
+                             keyframe_mode, target_overlap, min_overlap)
+    except Exception as err:
+        pipeline_progress["status"] = "FAILED"
+        pipeline_progress["percent"] = 0
+        pipeline_progress["current_frame"] = 0
+        pipeline_progress["stage"] = "Processing failed"
+        pipeline_progress["message"] = str(err)
+        raise

@@ -130,11 +130,38 @@ function runPipeline() {
   }, 700);
 }
 
+// Stage 02 keyframe-selection dropdown: the backend owns the default, the user's last choice wins
+const KEYFRAME_MODE_HINTS = {
+  sfm: 'Keyframes overlap 88-96% and are the sharpest of their neighbours: the most accurate input for COLMAP.',
+  sfm_light: 'Keyframes overlap 65-85%: about 4x fewer images and a much faster COLMAP run, slightly less accurate.',
+  notebook: 'Exact port of the Colab notebook: absolute sharpness cutoff (100) + histogram-correlation redundancy filter.'
+};
+
+function applyKeyframeModeDefault(health) {
+  const select = document.getElementById('keyframeModeSelect');
+  if (!select || select.dataset.ready) return;
+  select.dataset.ready = '1';
+  let stored = null;
+  try { stored = localStorage.getItem('aero3d.keyframeMode'); } catch (e) { /* storage unavailable */ }
+  const wanted = [stored, health && health.default_keyframe_mode].find((m) => m && [...select.options].some((o) => o.value === m));
+  if (wanted) select.value = wanted;
+  const sync = () => {
+    const hint = document.getElementById('keyframeModeHint');
+    if (hint) hint.textContent = KEYFRAME_MODE_HINTS[select.value] || '';
+  };
+  select.addEventListener('change', () => {
+    try { localStorage.setItem('aero3d.keyframeMode', select.value); } catch (e) { /* ignore */ }
+    sync();
+  });
+  sync();
+}
+
 // MongoDB Integration Helpers
 async function checkMongoHealth() {
   try {
     const res = await fetch('/api/health');
     const data = await res.json();
+    applyKeyframeModeDefault(data);
     const mongoStatusText = document.getElementById('mongoStatusText');
     const mongoDot = document.getElementById('mongoDot');
     const sidebarMongoText = document.getElementById('sidebarMongoText');
@@ -171,6 +198,7 @@ async function saveTelemetryToMongo(state) {
     const ve = 4.2 * Math.sin(headingRad);
     const vd = -0.05;
     const payload = {
+      simulated: true,
       source_label: state.label,
       width: state.width,
       height: state.height,
@@ -210,7 +238,7 @@ async function saveTelemetryToMongo(state) {
     });
     const result = await res.json();
     if (result.success) {
-      log(`[MONGODB] Saved flight telemetry to collection "telemetry_logs" · Doc ID: ${result.id}`);
+      log(`[MONGODB] Saved SIMULATED flight telemetry to collection "telemetry_logs" · Doc ID: ${result.id}`);
       const btn = document.getElementById('syncMongoBtn');
       if (btn) {
         btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Synced in Compass`;
@@ -467,6 +495,8 @@ function exportTelemetry(format = 'json') {
   if (format === 'json') {
     const payload = {
       generator: 'Aero3D OnePass Telemetry Ingestion Engine',
+      simulated: true,
+      note: 'Synthetic demo telemetry. GPS, IMU and RTK values are generated, not read from the video.',
       camera_intrinsics: state.intrinsics,
       video_metadata: {
         width: state.width,
@@ -486,7 +516,7 @@ function exportTelemetry(format = 'json') {
       'Altitude_MSL_m', 'Barometer_hPa', 'Yaw_Deg', 'Pitch_Deg', 'Roll_Deg',
       'GroundSpeed_mps', 'Vel_North_mps', 'Vel_East_mps', 'Vel_Down_mps',
       'AccX_mps2', 'AccY_mps2', 'AccZ_mps2', 'GyroX_dps', 'GyroY_dps', 'GyroZ_dps',
-      'RTK_Status', 'Sat_Count'
+      'RTK_Status', 'Sat_Count', 'Simulated'
     ];
     const rows = samples.map(s => [
       s.timestamp_utc, s.time_sec, s.latitude_deg, s.longitude_deg, s.altitude_agl_m,
@@ -494,7 +524,7 @@ function exportTelemetry(format = 'json') {
       s.ground_speed_mps, s.velocity_north_mps, s.velocity_east_mps, s.velocity_down_mps,
       s.imu_acc_mps2[0], s.imu_acc_mps2[1], s.imu_acc_mps2[2],
       s.imu_gyro_dps[0], s.imu_gyro_dps[1], s.imu_gyro_dps[2],
-      s.rtk_fix, s.satellites
+      s.rtk_fix, s.satellites, 'true'
     ].join(','));
     const csvContent = [headers.join(','), ...rows].join('\n');
     blob = new Blob([csvContent], { type: 'text/csv' });
@@ -942,10 +972,9 @@ function loadVideo(url, label, fileObj = null) {
         success: true
       });
 
-      log(`[TELEMETRY] Extracted 12/12 attributes · Res: ${w}×${h} · FPS: ${fps} · Intrinsics fx: ${intrinsics.fx} · RTK: FIXED`);
-
-      // Persist ingested video telemetry to MongoDB Compass (telemetry_logs)
-      saveTelemetryToMongo(activeTelemetryState);
+      log(`[TELEMETRY] SIMULATED demo telemetry generated (no GPS/IMU/RTK is read from the video) · Res: ${w}×${h} · Nominal intrinsics fx: ${intrinsics.fx}`);
+      // Not auto-saved to MongoDB: this data is synthetic. It can still be synced manually
+      // with the "Sync to MongoDB" button, and is then flagged simulated: true.
     };
 
     // Synchronize telemetry with real-time video playback and scrubbing
@@ -1974,15 +2003,18 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // 6. OTHER MODULES (AI Depth, Georeferencing, 3D Generation)
-    if (moduleName === 'depth-estimation' || moduleName === 'georeferencing' || moduleName === '3d-generation') {
+    // 6. OTHER MODULES (still UI mock-ups: Georeferencing, 3D Generation)
+    // Stage 04 (Pose & Depth) is a real page owned by assets/js/stage04.js, which watches
+    // data-active-view on #dashboardMainArea to show itself.
+    if (moduleName === 'depth-estimation') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      log('[WORKFLOW] Switched to Stage 04 · Camera Pose & Depth.');
+      return;
+    }
+
+    if (moduleName === 'georeferencing' || moduleName === '3d-generation') {
       if (workspaceGrid) workspaceGrid.style.display = 'grid';
-      if (moduleName === 'depth-estimation') {
-        const dualModeBtn = document.getElementById('modeDualView');
-        if (dualModeBtn) dualModeBtn.click();
-        const depthModeBtn = document.querySelector('.frame-mode-btns [data-framemode="depth"]');
-        if (depthModeBtn) depthModeBtn.click();
-      } else if (moduleName === 'georeferencing') {
+      if (moduleName === 'georeferencing') {
         const metaCard = document.getElementById('metadataCard');
         if (metaCard) metaCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else if (moduleName === '3d-generation') {
@@ -2148,7 +2180,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 400);
 
     try {
-      const res = await fetch('/api/process-video', {
+      const modeSelect = document.getElementById('keyframeModeSelect');
+      const keyframeMode = modeSelect ? modeSelect.value : '';
+      const res = await fetch('/api/process-video' + (keyframeMode ? `?keyframe_mode=${encodeURIComponent(keyframeMode)}` : ''), {
         method: 'POST',
         body: formData
       });
@@ -2157,7 +2191,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (res.ok) {
         const data = await res.json();
-        log(`[FASTAPI] ✅ Video processed successfully · Res: ${data.resolution} · FPS: ${data.fps} · Extracted: ${data.number_of_extracted_frames} · Sharp: ${data.number_of_sharp_frames} · Keyframes: ${data.number_of_final_keyframes} · Trajectory: ${data.trajectory_points} pts`);
+        log(`[FASTAPI] ✅ Video processed successfully (keyframe mode: ${data.keyframe_mode}) · Res: ${data.resolution} · FPS: ${data.fps} · Extracted: ${data.number_of_extracted_frames} · Sharp: ${data.number_of_sharp_frames} · Keyframes: ${data.number_of_final_keyframes} · Trajectory: ${data.trajectory_points} pts`);
         
         if (dropZone) {
           dropZone.innerHTML = `
