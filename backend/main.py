@@ -37,6 +37,7 @@ from services import fusion
 from services import georef
 from services import exporter
 from services import confidence
+from services import meshing
 
 STORAGE_DIR = os.path.join(BACKEND_DIR, "storage")
 VIDEOS_DIR = os.path.join(STORAGE_DIR, "videos")
@@ -1268,6 +1269,54 @@ def stage08_preview(project: Optional[str] = None, max_points: int = 60000):
     return {"success": True, "point_count": int(len(P)),
             "points": [round(float(v), 4) for v in P.ravel()],
             "colors": [int(v) for v in np.clip(C.ravel() * 255, 0, 255).astype(int)]}
+
+
+# ==========================================
+# 4.13. STAGE 09.1: TEXTURED MESH (stretch)
+# ==========================================
+
+@app.post("/api/stage09/mesh")
+def stage09_mesh(project: Optional[str] = None):
+    """Poisson surface mesh from the dense cloud -> OBJ + GLB. Degrades gracefully if it fails."""
+    _, slug = _resolve_project(project)
+    stage_dir = _stage04_dir(slug)
+    try:
+        rep = meshing.build_mesh(stage_dir)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:                       # stretch feature: never hard-fail the run
+        rep = {"available": False, "reason": str(e)}
+    with open(os.path.join(stage_dir, "mesh.json"), "w", encoding="utf-8") as f:
+        json.dump(rep, f, indent=2)
+    return {"success": True, "mesh": rep}
+
+
+@app.get("/api/stage09/report")
+def stage09_report(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "mesh.json")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="No mesh built yet.")
+    with open(p, "r", encoding="utf-8") as f:
+        return {"success": True, "mesh": json.load(f)}
+
+
+@app.get("/api/stage09/mesh.obj")
+def stage09_obj(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "mesh.obj")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="Build the mesh first.")
+    return FileResponse(p, media_type="application/octet-stream", filename=f"{slug}_mesh.obj")
+
+
+@app.get("/api/stage09/mesh.glb")
+def stage09_glb(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "mesh.glb")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="No GLB mesh available.")
+    return FileResponse(p, media_type="model/gltf-binary", filename=f"{slug}_mesh.glb")
 
 
 # ==========================================

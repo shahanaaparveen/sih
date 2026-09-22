@@ -111,6 +111,7 @@
     $('s04DenseBtn').disabled = false;
     $('s04GeorefBtn').disabled = false;
     $('s04ConfBtn').disabled = false;
+    $('s04MeshBtn').disabled = false;
     const verdict = $('s04Verdict');
     verdict.textContent = s.verdict;
     verdict.className = `s04-verdict ${s.verdict}`;
@@ -505,8 +506,35 @@
     d.replaceChildren(...links.map(([label, href]) => { const a = el('a', 'outline-btn sm-btn s04-link-btn', label); a.href = href; a.setAttribute('download', ''); return a; }));
   }
 
+  async function meshBuild() {
+    const btn = $('s04MeshBtn');
+    btn.disabled = true;
+    $('s04ActionInfo').textContent = 'Building mesh (Poisson)… this can take a minute';
+    try {
+      const r = await apiSend('/api/stage09/mesh', 'POST');
+      const m = r.mesh || {};
+      if (m.available) {
+        $('s04ActionInfo').textContent = `Mesh: ${m.vertices.toLocaleString()} vertices, ${m.triangles.toLocaleString()} triangles`;
+        const d = $('s04Downloads');
+        d.style.display = 'flex';
+        const links = [['Mesh (.obj)', '/api/stage09/mesh.obj']];
+        if (m.glb) links.push(['Mesh (.glb)', '/api/stage09/mesh.glb']);
+        links.forEach(([label, href]) => {
+          if (![...d.querySelectorAll('a')].some((a) => a.href.includes(href))) {
+            const a = el('a', 'outline-btn sm-btn s04-link-btn', label);
+            a.href = href; a.setAttribute('download', ''); d.appendChild(a);
+          }
+        });
+      } else {
+        $('s04ActionInfo').textContent = `Mesh unavailable (${m.reason || 'failed'}) — the dense cloud is still available`;
+      }
+    } catch (err) { $('s04ActionInfo').textContent = err.message; }
+    btn.disabled = false;
+  }
+
   // ---------------------------------------------------------------- wiring --------------------
   $('s04ExportBtn').addEventListener('click', exportPackage);
+  $('s04MeshBtn').addEventListener('click', meshBuild);
   $('s04RunBtn').addEventListener('click', runLocal);
   $('s04DenseBtn').addEventListener('click', buildDense);
   $('s04GeorefBtn').addEventListener('click', georeference);

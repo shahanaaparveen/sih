@@ -41,7 +41,7 @@ Open **http://localhost:8000**. `/api/health` should report `db_backend: sqlite`
 | 6 | **Build dense cloud** → toggle **Dense cloud** in the viewer | Dense colored point cloud (**Completeness 20%**) |
 | 7 | **Georeference (→ metres)** — show scale + horizontal/vertical RMSE | **Metric accuracy without GCPs** (30%) |
 | 8 | **Confidence map** — coverage % + cloud recoloured by viewpoint coverage (red = weak) | Confidence-aware output (**Innovation 15%**) |
-| 9 | Download **PLY / LAS / metric PLY / GeoJSON / confidence PLY**; open in CloudCompare/MeshLab | Standard deliverables + honest reliability |
+| 9 | Optional **Build mesh** → OBJ/GLB; download **PLY / LAS / metric PLY / GeoJSON / confidence PLY / mesh**; open in CloudCompare/MeshLab/Blender | Standard deliverables + honest reliability |
 
 ## 3. Honest talking points (say these — they are strengths)
 
@@ -58,8 +58,10 @@ Open **http://localhost:8000**. `/api/health` should report `db_backend: sqlite`
 - **Confidence / coverage** is the differentiator: every dense point is scored by how many viewpoints observe
   it. The UI reports the well-observed fraction and single-view %, and recolours the cloud — single-pass
   coverage gaps are shown, not hidden.
-- What is **not** yet done (be upfront): textured mesh (Phase 9.1). Masking targets moving objects, not sky;
-  some far background may remain (handled by depth far-clipping).
+- **Textured mesh** (OBJ/GLB) is available as a stretch output (Open3D Poisson); on low-overlap clouds it
+  degrades gracefully back to the point cloud.
+- Honest limits: masking targets moving objects, not sky, so some far background may remain (handled by depth
+  far-clipping); metric scale is only as good as the GPS supplied.
 
 ## 4. Benchmark (measured)
 
