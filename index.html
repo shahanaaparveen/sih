@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Three.js CDN for 3D Viewport Renderer -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <link rel="stylesheet" href="assets/css/styles.css" />
+    <link rel="stylesheet" href="assets/css/styles.css?v=2" />
   </head>
   <body>
     <!-- Navigation Header -->
@@ -134,7 +134,7 @@
                 </svg>
               </div>
               <span class="workflow-nav-text">Georeferencing</span>
-              <span class="projects-count-pill demo-pill" title="Not implemented yet: this view is a UI mock-up">DEMO</span>
+              <span class="projects-count-pill" title="Runs inside Pose &amp; Depth (Stage 04)">in Stage 04</span>
             </button>
 
             <!-- 7. 3D Model Generation -->
@@ -147,7 +147,7 @@
                 </svg>
               </div>
               <span class="workflow-nav-text">3D Model Generation</span>
-              <span class="projects-count-pill demo-pill" title="Not implemented yet: this view is a UI mock-up">DEMO</span>
+              <span class="projects-count-pill" title="Runs inside Pose &amp; Depth (Stage 04)">in Stage 04</span>
             </button>
           </nav>
         </aside>
@@ -530,6 +530,15 @@
                 </div>
                 <div id="s04Project" class="s04-project">--</div>
               </div>
+
+              <ol class="s04-flow">
+                <li><b>1</b> Run Stage 04 (pose + depth)</li>
+                <li><b>2</b> Build dense cloud</li>
+                <li><b>3</b> Georeference</li>
+                <li><b>4</b> Confidence map</li>
+                <li><b>5</b> Mesh <span style="opacity:.7">(optional)</span></li>
+              </ol>
+              <p class="s04-flow-note">Everything happens on this page, in order. Start with step 1 &mdash; steps 2&ndash;5 appear once Stage 04 finishes (it runs COLMAP + depth on CPU, a few minutes).</p>
 
               <div class="s04-runbox">
                 <div>
@@ -1282,7 +1291,7 @@ k1=-0.04281 k2=0.01562 p1=0.00018 p2=-0.00009</pre>
       </div>
     </div>
 
-    <script src="assets/js/app.js"></script>
-    <script src="assets/js/stage04.js"></script>
+    <script src="assets/js/app.js?v=2"></script>
+    <script src="assets/js/stage04.js?v=2"></script>
   </body>
 </html>

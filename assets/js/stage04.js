@@ -392,7 +392,7 @@
     btn.disabled = true;
     prog.style.display = 'block';
     prog.className = 's04-runprogress running';
-    prog.textContent = 'Starting local run…';
+    prog.textContent = 'Starting… pose + depth run on CPU (a few minutes). Live progress appears below — leave this page open.';
     message('');
     apiSend('/api/stage04/run', 'POST').then(() => {
       const poll = async () => {

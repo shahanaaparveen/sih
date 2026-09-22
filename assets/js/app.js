@@ -2012,15 +2012,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // "Georeferencing" and "3D Model Generation" used to open a mock page. The REAL georeferencing,
+    // dense map and 3D model/mesh generation all run inside Pose & Depth (Stage 04), so route the
+    // user there — one coherent reconstruction flow instead of a confusing dead-end mock.
     if (moduleName === 'georeferencing' || moduleName === '3d-generation') {
-      if (workspaceGrid) workspaceGrid.style.display = 'grid';
-      if (moduleName === 'georeferencing') {
-        const metaCard = document.getElementById('metadataCard');
-        if (metaCard) metaCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else if (moduleName === '3d-generation') {
-        const modelDualBtn = document.getElementById('modeDualView');
-        if (modelDualBtn) modelDualBtn.click();
-      }
+      log('[WORKFLOW] Georeferencing & 3D model generation run inside Pose & Depth (Stage 04). Opening it.');
+      activateSidebarModule('depth-estimation');
+      return;
     }
   }
 
