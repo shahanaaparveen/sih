@@ -2012,15 +2012,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // "Georeferencing" and "3D Model Generation" used to open a mock page. The REAL georeferencing,
+    // dense map and 3D model/mesh generation all run inside Pose & Depth (Stage 04), so route the
+    // user there — one coherent reconstruction flow instead of a confusing dead-end mock.
     if (moduleName === 'georeferencing' || moduleName === '3d-generation') {
-      if (workspaceGrid) workspaceGrid.style.display = 'grid';
-      if (moduleName === 'georeferencing') {
-        const metaCard = document.getElementById('metadataCard');
-        if (metaCard) metaCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } else if (moduleName === '3d-generation') {
-        const modelDualBtn = document.getElementById('modeDualView');
-        if (modelDualBtn) modelDualBtn.click();
-      }
+      log('[WORKFLOW] Georeferencing & 3D model generation run inside Pose & Depth (Stage 04). Opening it.');
+      activateSidebarModule('depth-estimation');
+      return;
     }
   }
 
@@ -2637,7 +2635,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadKeyframesFilmstrip() {
     if (!keyframesFilmstrip) return;
     try {
-      const res = await fetch('/api/video/keyframes?count=10');
+      const res = await fetch('/api/video/keyframes');
       if (res.ok) {
         const data = await res.json();
         colabState.keyframes = data.keyframes || [];
@@ -2671,7 +2669,7 @@ document.addEventListener('DOMContentLoaded', () => {
     keyframesFilmstrip.innerHTML = '';
 
     const countBadge = document.getElementById('keyframesCountBadge');
-    if (countBadge) countBadge.textContent = `${keyframes.length} CANDIDATE FRAMES`;
+    if (countBadge) countBadge.textContent = `${keyframes.length} KEYFRAMES`;
 
     keyframes.forEach(kf => {
       const card = document.createElement('div');
@@ -2827,7 +2825,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const frameNumber = kf.frame_number !== undefined ? kf.frame_number : (kf.frame_index + 1);
     const frameIndex = kf.frame_index !== undefined ? kf.frame_index : (frameNumber - 1);
     const sharpness = (typeof kf.sharpness === 'number') ? kf.sharpness.toFixed(2) : kf.sharpness;
-    const totalVideoFrames = (window.currentKeyframesData && window.currentKeyframesData.total_frames) || colabState.totalFrames || 712;
+    const totalVideoFrames = (window.currentKeyframesData && window.currentKeyframesData.total_frames) || colabState.totalFrames || 0;
     const timestampSec = (typeof kf.timestamp_sec === 'number') ? kf.timestamp_sec.toFixed(2) : (typeof kf.timestamp === 'number' ? kf.timestamp.toFixed(2) : (frameIndex / (colabState.fps || 30.0)).toFixed(2));
 
     // Update Matplotlib Title:
@@ -2877,7 +2875,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (slider) { slider.min = 0; slider.max = maxIdx; }
           if (numInput) { numInput.min = 0; numInput.max = maxIdx; }
           if (totalCountEl) totalCountEl.textContent = selectedFramesList.length;
-          if (origTotalEl) origTotalEl.textContent = data.total_frames || colabState.totalFrames || 712;
+          if (origTotalEl) origTotalEl.textContent = data.total_frames || colabState.totalFrames || '--';
           show_selected_keyframe(0);
         }
       }
@@ -3075,6 +3073,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Refresh active styling
     renderProjectsGrid(projectsList);
+
+    // Invalidate cached per-project data so every view re-fetches for the newly selected project
+    // (otherwise the dashboard would render the previous project's trajectory/keyframes).
+    cachedTrajectoryData = null;
+    window.currentKeyframesData = null;
+    if (typeof colabState === 'object') colabState.keyframes = [];
 
     // DIRECT FROM PROJECT OPTION TO DASHBOARD OPTION
     activateSidebarModule('dashboard');

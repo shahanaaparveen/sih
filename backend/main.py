@@ -71,6 +71,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def revalidate_frontend(request: Request, call_next):
+    """Always revalidate the frontend so edits to index.html / assets are never served stale from cache."""
+    resp = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith("/assets") or path.endswith((".html", ".js", ".css")):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
 # Document store (SQLite by default, Supabase when configured). See db/store.py.
 DB_NAME = "aero3d_db"
 
