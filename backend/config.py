@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     # --- Models (CPU) ---
     # Depth Anything V2 Small is Apache-2.0; the Large variant is non-commercial (do not ship it).
     DEPTH_MODEL: str = "depth-anything/Depth-Anything-V2-Small-hf"
-    YOLO_MODEL: str = "yolov8n.pt"
+    YOLO_MODEL: str = "yolov8n-seg.pt"       # segmentation = pixel masks (tighter than boxes)
+    MASK_DYNAMIC: bool = True                # mask people/vehicles/animals before SfM + fusion
 
     # --- Data layer: SQLite by default; flip USE_SUPABASE=true once keys are set (P1) ---
     USE_SUPABASE: bool = False

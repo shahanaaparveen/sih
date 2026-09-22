@@ -35,6 +35,9 @@ from services import stage04 as stage04_service
 from services import sfm_local
 from services import fusion
 from services import georef
+from services import exporter
+from services import confidence
+from services import meshing
 
 STORAGE_DIR = os.path.join(BACKEND_DIR, "storage")
 VIDEOS_DIR = os.path.join(STORAGE_DIR, "videos")
@@ -1089,7 +1092,8 @@ def stage06_dense(project: Optional[str] = None, pixel_stride: int = 2):
     out_ply = os.path.join(stage_dir, "dense.ply")
     try:
         stats = fusion.build_dense_cloud(stage_dir, _project_keyframes_dir(slug), _project_frames_dir(slug),
-                                         out_ply, pixel_stride=max(1, pixel_stride))
+                                         out_ply, pixel_stride=max(1, pixel_stride),
+                                         masks_dir=os.path.join(stage_dir, "results", "masks"))
     except (FileNotFoundError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     stats["units"] = "COLMAP world units (arbitrary scale, not metres); metric scale comes from Stage 07."
@@ -1162,6 +1166,157 @@ def stage07_metric_ply(project: Optional[str] = None):
     if not os.path.isfile(p):
         raise HTTPException(status_code=404, detail="No metric cloud yet; run georeferencing first.")
     return FileResponse(p, media_type="application/octet-stream", filename=f"{slug}_dense_metric.ply")
+
+
+@app.get("/api/stage07/track.geojson")
+def stage07_track(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    out = os.path.join(_stage04_dir(slug), "track.geojson")
+    try:
+        exporter.export_camera_track_geojson(_stage04_dir(slug), out)
+    except (RuntimeError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return FileResponse(out, media_type="application/geo+json", filename=f"{slug}_track.geojson")
+
+
+# ==========================================
+# 4.11. EXPORTS & DENSE-CLOUD PREVIEW
+# ==========================================
+
+@app.get("/api/stage06/dense.las")
+def stage06_las(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    ply = os.path.join(_stage04_dir(slug), "dense.ply")
+    if not os.path.isfile(ply):
+        raise HTTPException(status_code=404, detail="Build the dense cloud first.")
+    out = os.path.join(_stage04_dir(slug), "dense.las")
+    try:
+        exporter.export_las(ply, out)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return FileResponse(out, media_type="application/octet-stream", filename=f"{slug}_dense.las")
+
+
+@app.get("/api/stage06/preview")
+def stage06_preview(project: Optional[str] = None, max_points: int = 60000):
+    """Downsampled dense cloud as JSON (points + colors) for the in-app 3D viewer."""
+    _, slug = _resolve_project(project)
+    ply = os.path.join(_stage04_dir(slug), "dense.ply")
+    if not os.path.isfile(ply):
+        raise HTTPException(status_code=404, detail="Build the dense cloud first.")
+    import open3d as o3d
+    pcd = o3d.io.read_point_cloud(ply)
+    P = np.asarray(pcd.points)
+    C = np.asarray(pcd.colors)
+    cap = max(1000, min(max_points, 150000))
+    if len(P) > cap:
+        idx = np.sort(np.random.default_rng(0).choice(len(P), cap, replace=False))
+        P, C = P[idx], C[idx]
+    return {"success": True, "point_count": int(len(P)), "total_points": int(len(pcd.points)),
+            "points": [round(float(v), 4) for v in P.ravel()],
+            "colors": [int(v) for v in np.clip(C.ravel() * 255, 0, 255).astype(int)]}
+
+
+# ==========================================
+# 4.12. STAGE 08: CONFIDENCE / COVERAGE MAP
+# ==========================================
+
+@app.post("/api/stage08/confidence")
+def stage08_confidence(project: Optional[str] = None):
+    """Per-point viewpoint-coverage confidence + coverage-gap stats; recolours the dense cloud."""
+    _, slug = _resolve_project(project)
+    try:
+        rep = confidence.compute_confidence(_stage04_dir(slug))
+    except (FileNotFoundError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, **{k: v for k, v in rep.items() if k != "confidence_ply"}}
+
+
+@app.get("/api/stage08/report")
+def stage08_report(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "confidence.json")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="No confidence map computed yet.")
+    with open(p, "r", encoding="utf-8") as f:
+        return {"success": True, **json.load(f)}
+
+
+@app.get("/api/stage08/confidence.ply")
+def stage08_ply(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "dense_confidence.ply")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="Compute the confidence map first.")
+    return FileResponse(p, media_type="application/octet-stream", filename=f"{slug}_confidence.ply")
+
+
+@app.get("/api/stage08/preview")
+def stage08_preview(project: Optional[str] = None, max_points: int = 60000):
+    """Confidence-coloured dense cloud as JSON (turbo: red = weakly observed) for the viewer."""
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "dense_confidence.ply")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="Compute the confidence map first.")
+    import open3d as o3d
+    pcd = o3d.io.read_point_cloud(p)
+    P = np.asarray(pcd.points)
+    C = np.asarray(pcd.colors)
+    cap = max(1000, min(max_points, 150000))
+    if len(P) > cap:
+        idx = np.sort(np.random.default_rng(0).choice(len(P), cap, replace=False))
+        P, C = P[idx], C[idx]
+    return {"success": True, "point_count": int(len(P)),
+            "points": [round(float(v), 4) for v in P.ravel()],
+            "colors": [int(v) for v in np.clip(C.ravel() * 255, 0, 255).astype(int)]}
+
+
+# ==========================================
+# 4.13. STAGE 09.1: TEXTURED MESH (stretch)
+# ==========================================
+
+@app.post("/api/stage09/mesh")
+def stage09_mesh(project: Optional[str] = None):
+    """Poisson surface mesh from the dense cloud -> OBJ + GLB. Degrades gracefully if it fails."""
+    _, slug = _resolve_project(project)
+    stage_dir = _stage04_dir(slug)
+    try:
+        rep = meshing.build_mesh(stage_dir)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:                       # stretch feature: never hard-fail the run
+        rep = {"available": False, "reason": str(e)}
+    with open(os.path.join(stage_dir, "mesh.json"), "w", encoding="utf-8") as f:
+        json.dump(rep, f, indent=2)
+    return {"success": True, "mesh": rep}
+
+
+@app.get("/api/stage09/report")
+def stage09_report(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "mesh.json")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="No mesh built yet.")
+    with open(p, "r", encoding="utf-8") as f:
+        return {"success": True, "mesh": json.load(f)}
+
+
+@app.get("/api/stage09/mesh.obj")
+def stage09_obj(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "mesh.obj")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="Build the mesh first.")
+    return FileResponse(p, media_type="application/octet-stream", filename=f"{slug}_mesh.obj")
+
+
+@app.get("/api/stage09/mesh.glb")
+def stage09_glb(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "mesh.glb")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="No GLB mesh available.")
+    return FileResponse(p, media_type="model/gltf-binary", filename=f"{slug}_mesh.glb")
 
 
 # ==========================================

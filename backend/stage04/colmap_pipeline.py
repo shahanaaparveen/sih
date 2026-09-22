@@ -49,6 +49,8 @@ def parse_args():
     p.add_argument("--reuse-sparse", action="store_true",
                    help="skip feature extraction / matching / mapping and rebuild model/ and the report from the "
                         "reconstructions already in --out/sparse (e.g. after a session restart)")
+    p.add_argument("--masks", default=None,
+                   help="folder of COLMAP masks named <image>.png (pixel 0 = ignore); hides dynamic objects")
     return p.parse_args()
 
 
@@ -105,6 +107,9 @@ def main():
     def run_sfm():
         reader = pycolmap.ImageReaderOptions()
         reader.camera_model = args.camera_model
+        if args.masks and os.path.isdir(args.masks):
+            reader.mask_path = args.masks
+            print(f"[colmap] using dynamic-object masks from {args.masks}", flush=True)
         extraction = pycolmap.FeatureExtractionOptions()
         extraction.max_image_size = args.max_image_size
         extraction.sift.max_num_features = args.max_features

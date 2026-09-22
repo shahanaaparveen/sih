@@ -3034,3 +3034,23 @@ input:checked + .slider-toggle:before {
 .keyframe-mode-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; padding: 12px 14px; background: var(--bg-card-alt); border: var(--border-thin); border-radius: var(--radius-sm); }
 .keyframe-mode-select { font-family: var(--font-heading); font-weight: 700; font-size: 13px; padding: 7px 10px; border: var(--border-thin); border-radius: var(--radius-sm); background: #fff; }
 .keyframe-mode-row small { flex-basis: 100%; font-size: 12px; color: var(--ink-muted); }
+
+/* Stage 04 — local run + dense + georeference controls */
+.s04-runbox { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  padding: 14px 16px; margin-bottom: 12px; background: var(--bg-card-alt); border: var(--border-thin);
+  border-radius: var(--radius-sm); }
+.s04-runbox b { display: block; font-family: var(--font-heading); font-size: 14px; }
+.s04-runbox small { display: block; font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
+.s04-runprogress { font-family: var(--font-mono, monospace); font-size: 12px; padding: 8px 12px; margin-bottom: 12px;
+  border-radius: var(--radius-sm); background: #0b1220; color: #cfe3ff; border: var(--border-thin); }
+.s04-runprogress.ok { background: #06301c; color: #b8f5cf; }
+.s04-runprogress.error { background: #3a0d12; color: #ffd0d5; }
+.s04-advanced { margin-bottom: 12px; }
+.s04-advanced > summary { cursor: pointer; font-size: 12px; color: var(--ink-muted); padding: 4px 0; }
+.s04-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 6px; }
+.s04-georef { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; margin-bottom: 10px;
+  border: var(--border-thin); background: var(--bg-card-alt); }
+.s04-georef.sim { background: #2a2410; color: #f4e2a8; border-color: #6b5a1f; }
+.s04-georef.ok { background: #06301c; color: #c5f6d7; }
+.s04-caveat { font-size: 11.5px; margin-top: 6px; opacity: 0.9; }
+.s04-downloads { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }

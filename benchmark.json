@@ -1,0 +1,44 @@
+{
+  "hardware": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+    "cpu_count": 16,
+    "device": "cpu"
+  },
+  "clip": {
+    "file": "WhatsApp Video 2026-09-02 at 7.32.45 PM.mp4",
+    "resolution": "3840 x 2160",
+    "fps": 29.97,
+    "duration_s": 23.76,
+    "total_frames": 712
+  },
+  "settings": {
+    "keyframe_mode": "sfm_light",
+    "max_frames_on_disk": 120,
+    "matcher": "exhaustive"
+  },
+  "result": {
+    "keyframes": 16,
+    "registered": 16,
+    "verdict": "good",
+    "reprojection_error_px": 0.7511,
+    "dense_points": 190168,
+    "depth_maps": 16,
+    "rmse_horizontal_m": 1.228,
+    "gps_source": "simulated"
+  },
+  "colmap_timings_s": {
+    "feature extraction": 12.6,
+    "exhaustive matching": 50.2,
+    "incremental mapping + bundle adjustment": 23.2
+  },
+  "stage_timings_s": {
+    "process_video": 23.8,
+    "stage04_pose_depth": 124.3,
+    "dense_cloud": 1.8,
+    "georeference": 0.3,
+    "export_las": 0.1,
+    "export_geojson": 0.2
+  },
+  "total_seconds": 150.4
+}

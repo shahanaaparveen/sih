@@ -69,6 +69,9 @@ def georeference(stage_dir: str, results: Dict[str, Any], project_gps_csv: Optio
         "rmse_vertical_m": _rmse(np.abs(resid[ev][:, 2])),
         "rmse_3d_m": _rmse(np.linalg.norm(resid[ev], axis=1)),
         "evaluated_on": "holdout" if hold.any() else "all_frames",
+        # full similarity (COLMAP units -> metric ENU): metric = scale * (p @ R^T) + t. Lets exports
+        # (metric cloud, GeoJSON track) reuse the exact alignment without refitting.
+        "transform": {"scale": float(s), "rotation": R.tolist(), "translation": t.tolist()},
     }
     if source == "simulated":
         report["caveat"] = ("GPS is SIMULATED: these metric figures validate the georeferencing pipeline "
