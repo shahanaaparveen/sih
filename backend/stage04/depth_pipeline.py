@@ -102,22 +102,42 @@ def robust_linear_fit(x, y, iters=4):
 
 
 def align_relative(pred, uv, z):
-    """Fit 1/z ~ a*pred + b on 80% of the sparse points, validate on the other 20%."""
+    """
+    Fit the network output to COLMAP depth on 80% of the sparse points, validate on the other 20%.
+
+    Depth Anything V2 "relative" checkpoints are not consistent about their output convention across
+    model/transformers versions: some emit disparity (larger = nearer), others depth (larger = farther).
+    We auto-detect which by correlation and fit in that domain, so alignment works either way:
+      * disparity:  1/z = a*pred + b   ->  z = 1 / (a*pred + b)
+      * depth:        z = a*pred + b
+    """
     d = sample(pred, uv)
-    inv_z = 1.0 / z
-    ok = np.isfinite(d) & np.isfinite(inv_z)
-    d, inv_z, z = d[ok], inv_z[ok], z[ok]
+    ok = np.isfinite(d) & np.isfinite(z) & (z > 0)
+    d, z = d[ok], z[ok]
+    if len(d) < MIN_POINTS:
+        return None
     hold = (np.arange(len(d)) % HOLDOUT_EVERY) == 0
     train = ~hold
     if train.sum() < MIN_POINTS:
         return None
-    a, b, inl = robust_linear_fit(d[train], inv_z[train])
-    if a <= 0:
+    inv_z = 1.0 / z
+
+    def _corr(x, y):
+        c = np.corrcoef(x, y)[0, 1]
+        return abs(c) if np.isfinite(c) else 0.0
+    mode = "disp" if _corr(d[train], inv_z[train]) >= _corr(d[train], z[train]) else "depth"
+    target = inv_z if mode == "disp" else z
+
+    a, b, inl = robust_linear_fit(d[train], target[train])
+    if mode == "disp":
+        z_hat = 1.0 / np.maximum(a * d[hold] + b, 1e-9)
+    else:
+        z_hat = a * d[hold] + b
+    valid = np.isfinite(z_hat) & (z_hat > 0)
+    if valid.sum() < max(3, MIN_POINTS // 2):
         return None
-    inv_hat = a * d[hold] + b
-    z_hat = 1.0 / np.maximum(inv_hat, 1e-9)
-    rel_err = np.abs(z_hat - z[hold]) / z[hold]
-    return {"a": a, "b": b, "n_fit": int(train.sum()), "n_inliers": int(inl.sum()),
+    rel_err = np.abs(z_hat[valid] - z[hold][valid]) / z[hold][valid]
+    return {"a": a, "b": b, "mode": mode, "n_fit": int(train.sum()), "n_inliers": int(inl.sum()),
             "n_holdout": int(hold.sum()), "holdout_rel_err_median": float(np.median(rel_err)),
             "z_far": float(np.percentile(z, 99) * 3.0)}
 
@@ -183,7 +203,9 @@ def main():
             per_image.append(entry)
             continue
 
-        if kind == "relative":
+        if kind == "relative" and fit.get("mode") == "depth":
+            depth = np.clip(fit["a"] * pred + fit["b"], 1e-3, fit["z_far"])
+        elif kind == "relative":
             depth = 1.0 / np.maximum(fit["a"] * pred + fit["b"], 1.0 / fit["z_far"])
         else:
             depth = np.minimum(fit["scale"] * np.maximum(pred, 1e-6), fit["z_far"])
