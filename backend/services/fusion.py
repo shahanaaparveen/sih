@@ -48,10 +48,12 @@ def _intrinsics(cam) -> tuple:
 
 def build_dense_cloud(stage_dir: str, keyframes_dir: str, frames_dir: str, out_ply: str,
                       pixel_stride: int = 2, voxel_size: float = 0.0, max_points: int = 3_000_000,
-                      progress: ProgressCB = None) -> Dict[str, Any]:
+                      masks_dir: Optional[str] = None, progress: ProgressCB = None) -> Dict[str, Any]:
     results_dir = os.path.join(stage_dir, "results")
     model_dir = os.path.join(results_dir, "model")
     depth_dir = os.path.join(results_dir, "depth")
+    if masks_dir and not os.path.isdir(masks_dir):
+        masks_dir = None
     if not os.path.isfile(os.path.join(model_dir, "images.txt")):
         raise FileNotFoundError("No Stage 04 model found; run pose+depth first.")
     if not os.path.isdir(depth_dir):
@@ -79,6 +81,12 @@ def build_dense_cloud(stage_dir: str, keyframes_dir: str, frames_dir: str, out_p
             continue
         rgb = cv2.cvtColor(cv2.resize(bgr, (sw, sh), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
 
+        mask = None
+        if masks_dir:
+            mm = cv2.imread(os.path.join(masks_dir, os.path.basename(im.name) + ".png"), cv2.IMREAD_GRAYSCALE)
+            if mm is not None:
+                mask = cv2.resize(mm, (sw, sh), interpolation=cv2.INTER_NEAREST)   # 0 = dynamic, drop it
+
         cam = model.cameras[im.camera_id]
         fx, fy, cx, cy = _intrinsics(cam)
         sx, sy = sw / cam.width, sh / cam.height     # depth stored smaller than the COLMAP image
@@ -92,6 +100,8 @@ def build_dense_cloud(stage_dir: str, keyframes_dir: str, frames_dir: str, out_p
         z_far = z_far_by_name.get(im.name)
         if z_far:
             valid &= z < 0.98 * z_far                # drop pixels pinned at the far clamp (sky/background)
+        if mask is not None:
+            valid &= mask[vv, uu] > 0                # drop dynamic-object pixels (people/vehicles/animals)
         if not valid.any():
             continue
         uu, vv, z = uu[valid], vv[valid], z[valid]

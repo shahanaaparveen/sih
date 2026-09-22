@@ -1090,7 +1090,8 @@ def stage06_dense(project: Optional[str] = None, pixel_stride: int = 2):
     out_ply = os.path.join(stage_dir, "dense.ply")
     try:
         stats = fusion.build_dense_cloud(stage_dir, _project_keyframes_dir(slug), _project_frames_dir(slug),
-                                         out_ply, pixel_stride=max(1, pixel_stride))
+                                         out_ply, pixel_stride=max(1, pixel_stride),
+                                         masks_dir=os.path.join(stage_dir, "results", "masks"))
     except (FileNotFoundError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     stats["units"] = "COLMAP world units (arbitrary scale, not metres); metric scale comes from Stage 07."

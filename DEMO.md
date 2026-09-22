@@ -35,7 +35,7 @@ Open **http://localhost:8000**. `/api/health` should report `db_backend: sqlite`
 |---|---|---|
 | 1 | **Upload Video** → drop the clip → keyframe mode **SfM (light)** → process | Single-pass ingestion; smart keyframe selection |
 | 2 | **Video Processing** / **Trajectory** — show extracted frames, sharpness, 2D path | Frame budget + keyframe overlap (Innovation, Scalability) |
-| 3 | **Pose & Depth** → **Run Stage 04 (local)** — watch live progress | COLMAP pose + Depth Anything V2, on CPU, no Colab |
+| 3 | **Pose & Depth** → **Run Stage 04 (local)** — watch live progress | Dynamic masking (YOLO) + COLMAP pose + Depth Anything V2, on CPU, no Colab |
 | 4 | When done: read the metric tiles (registered, reprojection px, depth error) | **Reconstruction accuracy (30%)** — measured, not claimed |
 | 5 | Orbit the 3D viewer (cameras + sparse points + depth per keyframe) | Model completeness, visualization |
 | 6 | **Build dense cloud** → toggle **Dense cloud** in the viewer | Dense colored point cloud (**Completeness 20%**) |
@@ -52,8 +52,10 @@ Open **http://localhost:8000**. `/api/health` should report `db_backend: sqlite`
 - **Speed:** CPU-only. We quote **measured** end-to-end timing (see `benchmark.json` / §4), and treat the SIH
   "<15 min for a 10-min video" figure as a target to benchmark on GPU hardware, not a CPU claim. Near-real-time
   is delivered as a progressive preview; the final textured mesh is a refinement step.
-- What is **not** yet done (be upfront): dynamic-object masking (Phase 4), confidence/coverage map (Phase 8),
-  textured mesh (Phase 9.1). The dense cloud may include some sky/background until masking lands.
+- **Dynamic objects** (people, vehicles, animals) are detected with YOLOv8 segmentation and masked out of
+  both COLMAP and the dense cloud, so they don't become false geometry (a named PS challenge).
+- What is **not** yet done (be upfront): confidence/coverage map (Phase 8) and textured mesh (Phase 9.1).
+  Masking targets moving objects, not sky; some far background may remain (handled by depth far-clipping).
 
 ## 4. Benchmark (measured)
 

@@ -21,9 +21,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 from config import settings
 from services import stage04 as stage04_service
+from services import masking
 
 # Files produced by the scripts that make up the "results" package import_results expects.
-_RESULT_MEMBERS = ("model", "depth", "depth_preview", "colmap_report.json", "depth_report.json", "manifest.json")
+_RESULT_MEMBERS = ("model", "depth", "depth_preview", "masks", "colmap_report.json", "depth_report.json", "manifest.json")
 
 ProgressCB = Optional[Callable[[str, str], None]]   # (stage, message)
 
@@ -74,12 +75,13 @@ def run_local_stage04(results: Dict[str, Any], keyframes_dir: str, frames_dir: s
                       slug: str, device: str = "cpu", matcher: str = "auto",
                       depth_model: Optional[str] = None, max_image_size: int = 1600,
                       num_threads: Optional[int] = None, run_depth: bool = True,
-                      progress: ProgressCB = None) -> Dict[str, Any]:
+                      run_masking: Optional[bool] = None, progress: ProgressCB = None) -> Dict[str, Any]:
     """
     End-to-end local pose (+ optional depth) for one processed project. Returns the same summary dict
     the Colab import produced, and writes it to <stage_dir>/summary.json.
     """
     depth_model = depth_model or settings.DEPTH_MODEL
+    run_masking = settings.MASK_DYNAMIC if run_masking is None else run_masking
     work = tempfile.mkdtemp(prefix="aero3d_stage04_")
     t0 = time.time()
     try:
@@ -98,9 +100,23 @@ def run_local_stage04(results: Dict[str, Any], keyframes_dir: str, frames_dir: s
         n_imgs = len([f for f in os.listdir(images) if f.lower().endswith((".jpg", ".jpeg", ".png"))])
         _emit(progress, "prepare", f"{n_imgs} images ready")
 
-        # 2. Camera pose + sparse cloud (COLMAP).
+        # 2a. Dynamic-object masks (people/vehicles/animals) so they don't become false geometry.
+        masks_dir = None
+        if run_masking:
+            masks_dir = os.path.join(pkg, "masks")
+            _emit(progress, "mask", "detecting dynamic objects (people/vehicles/animals)")
+            try:
+                mstats = masking.generate_masks(images, masks_dir, model_path=settings.YOLO_MODEL, progress=progress)
+                _emit(progress, "mask", f"{mstats['images_with_dynamic']}/{mstats['images']} images had dynamic objects")
+            except Exception as e:
+                _emit(progress, "mask", f"masking skipped ({e})")
+                masks_dir = None
+
+        # 2b. Camera pose + sparse cloud (COLMAP), masking out dynamic pixels if available.
         colmap_args = ["--images", images, "--out", out_dir, "--device", device, "--matcher", matcher,
                        "--max-image-size", str(max_image_size)]
+        if masks_dir:
+            colmap_args += ["--masks", masks_dir]
         if num_threads:
             colmap_args += ["--num-threads", str(num_threads)]
         _run_script(os.path.join(pkg, "colmap_pipeline.py"), colmap_args, progress, "COLMAP")
@@ -114,6 +130,8 @@ def run_local_stage04(results: Dict[str, Any], keyframes_dir: str, frames_dir: s
         # 4. Repackage the outputs and reuse import_results (validation + summarise + storage).
         #    The manifest lives with the package images; bring it next to the model for import.
         shutil.copyfile(os.path.join(pkg, "manifest.json"), os.path.join(out_dir, "manifest.json"))
+        if masks_dir and os.path.isdir(masks_dir):
+            shutil.copytree(masks_dir, os.path.join(out_dir, "masks"), dirs_exist_ok=True)
         res_zip = os.path.join(work, "stage04_results.zip")
         _zip_results(out_dir, res_zip)
         _emit(progress, "import", "validating and summarising results")
