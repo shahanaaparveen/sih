@@ -106,9 +106,11 @@
     $('s04Results').style.display = 'block';
     $('s04Downloads').style.display = 'none';
     $('s04Georef').style.display = 'none';
+    $('s04Coverage').style.display = 'none';
     $('s04ActionInfo').textContent = '';
     $('s04DenseBtn').disabled = false;
     $('s04GeorefBtn').disabled = false;
+    $('s04ConfBtn').disabled = false;
     const verdict = $('s04Verdict');
     verdict.textContent = s.verdict;
     verdict.className = `s04-verdict ${s.verdict}`;
@@ -405,12 +407,11 @@
     }).catch((err) => { btn.disabled = false; prog.className = 's04-runprogress error'; prog.textContent = err.message; });
   }
 
-  async function loadDense() {
+  function _densePoints(data) {
     const v = ensureViewer();
-    if (!v.world.userData || !v.world.userData.T) return;
-    const data = await api('/api/stage06/preview?max_points=60000');
-    clearObject(v.dense);
-    const n = data.point_count, T = v.world.userData.T;
+    const T = v.world.userData && v.world.userData.T;
+    if (!T) return null;
+    const n = data.point_count;
     const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
       const p = T([data.points[3 * i], data.points[3 * i + 1], data.points[3 * i + 2]]);
@@ -420,8 +421,46 @@
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    v.dense = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.03, vertexColors: true, sizeAttenuation: true }));
-    v.world.add(v.dense);
+    return new THREE.Points(g, new THREE.PointsMaterial({ size: 0.03, vertexColors: true, sizeAttenuation: true }));
+  }
+
+  async function _showDense(url) {
+    const v = ensureViewer();
+    const pts = _densePoints(await api(url));
+    if (!pts) return;
+    clearObject(v.dense);
+    v.dense = pts;
+    v.world.add(pts);
+    $('s04ShowDense').checked = true;
+    $('s04ShowPoints').checked = false;
+    applyToggles();
+  }
+
+  async function loadDense() { await _showDense('/api/stage06/preview?max_points=60000'); }
+
+  async function confidenceMap() {
+    const btn = $('s04ConfBtn');
+    btn.disabled = true;
+    $('s04ActionInfo').textContent = 'Computing coverage / confidence…';
+    try {
+      const r = await apiSend('/api/stage08/confidence', 'POST');
+      const c = $('s04Coverage');
+      c.style.display = 'block';
+      c.className = 's04-georef ok';
+      c.innerHTML = `<b>Coverage / confidence</b> &mdash; ${(r.well_observed_fraction * 100).toFixed(1)}% of points seen by ` +
+        `&ge;${r.min_views_threshold} views &middot; ${(r.single_view_fraction * 100).toFixed(1)}% single-view (low confidence) ` +
+        `&middot; mean ${r.mean_views} views/point` +
+        `<div class="s04-caveat">Viewer recoloured: red = weakly observed, green/blue = well observed.</div>`;
+      await _showDense('/api/stage08/preview?max_points=60000');
+      const d = $('s04Downloads');
+      if (![...d.querySelectorAll('a')].some((a) => a.href.includes('confidence'))) {
+        const a = el('a', 'outline-btn sm-btn s04-link-btn', 'Confidence cloud (.ply)');
+        a.href = '/api/stage08/confidence.ply'; a.setAttribute('download', '');
+        d.appendChild(a); d.style.display = 'flex';
+      }
+      $('s04ActionInfo').textContent = 'Confidence map ready';
+    } catch (err) { $('s04ActionInfo').textContent = err.message; }
+    btn.disabled = false;
   }
 
   async function buildDense() {
@@ -471,6 +510,7 @@
   $('s04RunBtn').addEventListener('click', runLocal);
   $('s04DenseBtn').addEventListener('click', buildDense);
   $('s04GeorefBtn').addEventListener('click', georeference);
+  $('s04ConfBtn').addEventListener('click', confidenceMap);
   $('s04ImportBtn').addEventListener('click', () => $('s04ImportInput').click());
   $('s04ImportInput').addEventListener('change', (e) => {
     importResults(e.target.files && e.target.files[0]);

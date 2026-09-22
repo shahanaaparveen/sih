@@ -40,7 +40,8 @@ Open **http://localhost:8000**. `/api/health` should report `db_backend: sqlite`
 | 5 | Orbit the 3D viewer (cameras + sparse points + depth per keyframe) | Model completeness, visualization |
 | 6 | **Build dense cloud** → toggle **Dense cloud** in the viewer | Dense colored point cloud (**Completeness 20%**) |
 | 7 | **Georeference (→ metres)** — show scale + horizontal/vertical RMSE | **Metric accuracy without GCPs** (30%) |
-| 8 | Download **PLY / LAS / metric PLY / GeoJSON**; open the PLY in CloudCompare/MeshLab | Standard deliverables (PLY/LAS), GIS track |
+| 8 | **Confidence map** — coverage % + cloud recoloured by viewpoint coverage (red = weak) | Confidence-aware output (**Innovation 15%**) |
+| 9 | Download **PLY / LAS / metric PLY / GeoJSON / confidence PLY**; open in CloudCompare/MeshLab | Standard deliverables + honest reliability |
 
 ## 3. Honest talking points (say these — they are strengths)
 
@@ -54,8 +55,11 @@ Open **http://localhost:8000**. `/api/health` should report `db_backend: sqlite`
   is delivered as a progressive preview; the final textured mesh is a refinement step.
 - **Dynamic objects** (people, vehicles, animals) are detected with YOLOv8 segmentation and masked out of
   both COLMAP and the dense cloud, so they don't become false geometry (a named PS challenge).
-- What is **not** yet done (be upfront): confidence/coverage map (Phase 8) and textured mesh (Phase 9.1).
-  Masking targets moving objects, not sky; some far background may remain (handled by depth far-clipping).
+- **Confidence / coverage** is the differentiator: every dense point is scored by how many viewpoints observe
+  it. The UI reports the well-observed fraction and single-view %, and recolours the cloud — single-pass
+  coverage gaps are shown, not hidden.
+- What is **not** yet done (be upfront): textured mesh (Phase 9.1). Masking targets moving objects, not sky;
+  some far background may remain (handled by depth far-clipping).
 
 ## 4. Benchmark (measured)
 

@@ -36,6 +36,7 @@ from services import sfm_local
 from services import fusion
 from services import georef
 from services import exporter
+from services import confidence
 
 STORAGE_DIR = os.path.join(BACKEND_DIR, "storage")
 VIDEOS_DIR = os.path.join(STORAGE_DIR, "videos")
@@ -1211,6 +1212,60 @@ def stage06_preview(project: Optional[str] = None, max_points: int = 60000):
         idx = np.sort(np.random.default_rng(0).choice(len(P), cap, replace=False))
         P, C = P[idx], C[idx]
     return {"success": True, "point_count": int(len(P)), "total_points": int(len(pcd.points)),
+            "points": [round(float(v), 4) for v in P.ravel()],
+            "colors": [int(v) for v in np.clip(C.ravel() * 255, 0, 255).astype(int)]}
+
+
+# ==========================================
+# 4.12. STAGE 08: CONFIDENCE / COVERAGE MAP
+# ==========================================
+
+@app.post("/api/stage08/confidence")
+def stage08_confidence(project: Optional[str] = None):
+    """Per-point viewpoint-coverage confidence + coverage-gap stats; recolours the dense cloud."""
+    _, slug = _resolve_project(project)
+    try:
+        rep = confidence.compute_confidence(_stage04_dir(slug))
+    except (FileNotFoundError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, **{k: v for k, v in rep.items() if k != "confidence_ply"}}
+
+
+@app.get("/api/stage08/report")
+def stage08_report(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "confidence.json")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="No confidence map computed yet.")
+    with open(p, "r", encoding="utf-8") as f:
+        return {"success": True, **json.load(f)}
+
+
+@app.get("/api/stage08/confidence.ply")
+def stage08_ply(project: Optional[str] = None):
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "dense_confidence.ply")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="Compute the confidence map first.")
+    return FileResponse(p, media_type="application/octet-stream", filename=f"{slug}_confidence.ply")
+
+
+@app.get("/api/stage08/preview")
+def stage08_preview(project: Optional[str] = None, max_points: int = 60000):
+    """Confidence-coloured dense cloud as JSON (turbo: red = weakly observed) for the viewer."""
+    _, slug = _resolve_project(project)
+    p = os.path.join(_stage04_dir(slug), "dense_confidence.ply")
+    if not os.path.isfile(p):
+        raise HTTPException(status_code=404, detail="Compute the confidence map first.")
+    import open3d as o3d
+    pcd = o3d.io.read_point_cloud(p)
+    P = np.asarray(pcd.points)
+    C = np.asarray(pcd.colors)
+    cap = max(1000, min(max_points, 150000))
+    if len(P) > cap:
+        idx = np.sort(np.random.default_rng(0).choice(len(P), cap, replace=False))
+        P, C = P[idx], C[idx]
+    return {"success": True, "point_count": int(len(P)),
             "points": [round(float(v), 4) for v in P.ravel()],
             "colors": [int(v) for v in np.clip(C.ravel() * 255, 0, 255).astype(int)]}
 
