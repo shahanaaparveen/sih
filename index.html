@@ -526,11 +526,22 @@
               <div class="s04-header">
                 <div>
                   <h2 class="s04-title">Camera Pose &amp; Depth <span class="s04-tag">STAGE 04</span></h2>
-                  <p class="s04-sub">Solves a 6-DoF camera pose for every keyframe with <b>COLMAP</b> and estimates a depth map for each with <b>Depth Anything V2</b>. The heavy compute runs on a free Colab GPU: export the package, run the notebook, import the results.</p>
+                  <p class="s04-sub">Solves a 6-DoF camera pose for every keyframe with <b>COLMAP</b> and estimates a depth map for each with <b>Depth Anything V2</b>, then fuses a dense cloud and georeferences it &mdash; all on this machine (CPU). A Colab GPU path is available under Advanced.</p>
                 </div>
                 <div id="s04Project" class="s04-project">--</div>
               </div>
 
+              <div class="s04-runbox">
+                <div>
+                  <b>Run on this machine (CPU)</b>
+                  <small id="s04RunInfo">Runs COLMAP pose + Depth Anything V2 locally. No Colab needed.</small>
+                </div>
+                <button type="button" id="s04RunBtn" class="primary-btn sm-btn" disabled>Run Stage 04 (local)</button>
+              </div>
+              <div id="s04RunProgress" class="s04-runprogress" style="display: none;"></div>
+
+              <details class="s04-advanced">
+                <summary>Advanced: run on a Colab GPU instead</summary>
               <ol class="s04-steps">
                 <li class="s04-step" id="s04Step1">
                   <span class="s04-step-num">1</span>
@@ -561,6 +572,7 @@
                   </div>
                 </li>
               </ol>
+              </details>
 
               <div id="s04Message" class="s04-message" style="display: none;"></div>
 
@@ -573,9 +585,18 @@
 
                 <div id="s04Metrics" class="s04-metrics"></div>
 
+                <div class="s04-actions">
+                  <button type="button" id="s04DenseBtn" class="primary-btn sm-btn">Build dense cloud</button>
+                  <button type="button" id="s04GeorefBtn" class="outline-btn sm-btn">Georeference (&rarr; metres)</button>
+                  <span id="s04ActionInfo" class="s04-scene-info"></span>
+                </div>
+                <div id="s04Georef" class="s04-georef" style="display: none;"></div>
+                <div id="s04Downloads" class="s04-downloads" style="display: none;"></div>
+
                 <div class="s04-viewer-wrap">
                   <canvas id="s04Canvas"></canvas>
                   <div class="s04-viewer-bar">
+                    <label><input type="checkbox" id="s04ShowDense"> Dense cloud</label>
                     <label><input type="checkbox" id="s04ShowPoints" checked> Sparse points</label>
                     <label><input type="checkbox" id="s04ShowCameras" checked> Cameras</label>
                     <label><input type="checkbox" id="s04ShowPath" checked> Flight path</label>
@@ -1099,25 +1120,17 @@
               <button class="layer" data-layer="path">Drone Flight Path</button>
             </div>
 
-            <!-- Metric Summary -->
+            <!-- Metric Summary — illustrative placeholders; real numbers live on the Pose & Depth page -->
             <div class="metrics">
-              <div>
-                <strong>42</strong>
-                <small>Keyframes</small>
-              </div>
-              <div>
-                <strong>1.4 cm</strong>
-                <small>GSD Accuracy</small>
-              </div>
-              <div>
-                <strong>485K</strong>
-                <small>3D Vertices</small>
-              </div>
-              <div>
-                <strong>99.4%</strong>
-                <small>Overlap Score</small>
-              </div>
+              <div><strong>&mdash;</strong><small>Keyframes</small></div>
+              <div><strong>&mdash;</strong><small>Reprojection err</small></div>
+              <div><strong>&mdash;</strong><small>Dense points</small></div>
+              <div><strong>&mdash;</strong><small>RMSE (m)</small></div>
             </div>
+            <p class="demo-note" style="font-size: 11.5px; color: var(--ink-muted); margin-top: 8px;">
+              This 3D Generation view is a design mock-up. Run the real reconstruction and get live metrics +
+              downloads (PLY / LAS / metric cloud / GeoJSON) on the <b>Pose &amp; Depth</b> page.
+            </p>
           </div>
 
           <!-- Bottom Grid: Log Terminal & Downloads -->
@@ -1139,9 +1152,9 @@
               <div class="panel-title">
                 <div>
                   <h2>Deliverables</h2>
-                  <p class="panel-sub">Export processed 3D data formats</p>
+                  <p class="panel-sub">Demo formats &mdash; real exports are on the Pose &amp; Depth page</p>
                 </div>
-                <span id="exportCount" class="export-count">READY</span>
+                <span id="exportCount" class="export-count demo-badge">DEMO</span>
               </div>
 
               <div class="export-list">

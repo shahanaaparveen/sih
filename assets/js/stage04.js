@@ -23,6 +23,14 @@
     return body;
   }
 
+  async function apiSend(path, method) {
+    const res = await fetch(path, { method: method || 'POST' });
+    let body = null;
+    try { body = await res.json(); } catch (e) { /* ignore */ }
+    if (!res.ok) throw new Error((body && (body.detail || body.error)) || `Request failed (${res.status})`);
+    return body;
+  }
+
   function message(text, kind) {
     const el = $('s04Message');
     if (!text) { el.style.display = 'none'; return; }
@@ -73,9 +81,14 @@
       if (!info.ready) text = `Needs at least ${info.min_keyframes} keyframes (found ${info.keyframes_on_disk}).`;
       $('s04ExportInfo').textContent = text;
       $('s04ExportBtn').disabled = !info.ready;
+      $('s04RunBtn').disabled = !info.ready;
+      $('s04RunInfo').textContent = info.ready
+        ? `${info.keyframes_on_disk} keyframes ready — runs COLMAP + Depth Anything V2 on CPU (a few minutes).`
+        : `Needs at least ${info.min_keyframes} keyframes (found ${info.keyframes_on_disk}).`;
     } catch (err) {
       $('s04ExportInfo').textContent = err.message;
       $('s04ExportBtn').disabled = true;
+      $('s04RunBtn').disabled = true;
     }
 
     ['s04Step1', 's04Step2', 's04Step3'].forEach((id) => $(id).classList.toggle('done', !!status.results_imported));
@@ -91,6 +104,11 @@
   function renderSummary(s) {
     state.importedAt = s.imported_at || '';
     $('s04Results').style.display = 'block';
+    $('s04Downloads').style.display = 'none';
+    $('s04Georef').style.display = 'none';
+    $('s04ActionInfo').textContent = '';
+    $('s04DenseBtn').disabled = false;
+    $('s04GeorefBtn').disabled = false;
     const verdict = $('s04Verdict');
     verdict.textContent = s.verdict;
     verdict.className = `s04-verdict ${s.verdict}`;
@@ -234,7 +252,7 @@
   function buildScene(scene) {
     if (!window.THREE) { message('Three.js failed to load, so the 3D view is unavailable.', 'error'); return; }
     const v = ensureViewer();
-    [v.points, v.cams, v.path, v.highlight].forEach(clearObject);
+    [v.points, v.cams, v.path, v.highlight, v.dense].forEach(clearObject);
 
     const P = scene.points, n = scene.point_count;
     const centers = scene.cameras.map((c) => c.center);
@@ -293,6 +311,7 @@
     if (v.points) v.points.visible = $('s04ShowPoints').checked;
     if (v.cams) v.cams.visible = $('s04ShowCameras').checked;
     if (v.path) v.path.visible = $('s04ShowPath').checked;
+    if (v.dense) v.dense.visible = $('s04ShowDense').checked;
   }
 
   function setHighlight(idx) {
@@ -364,15 +383,101 @@
     showDepth(0);
   }
 
+  // ---------------------------------------------------------------- local run + dense + georef -
+  function runLocal() {
+    const btn = $('s04RunBtn'), prog = $('s04RunProgress');
+    btn.disabled = true;
+    prog.style.display = 'block';
+    prog.className = 's04-runprogress running';
+    prog.textContent = 'Starting local run…';
+    message('');
+    apiSend('/api/stage04/run', 'POST').then(() => {
+      const poll = async () => {
+        let p;
+        try { p = await api('/api/stage04/run_progress'); } catch (e) { setTimeout(poll, 2000); return; }
+        prog.textContent = `${p.stage || p.status}: ${p.message || ''}`.trim();
+        if (p.status === 'RUNNING') { setTimeout(poll, 1500); return; }
+        btn.disabled = false;
+        if (p.status === 'COMPLETED') { prog.className = 's04-runprogress ok'; prog.textContent = 'Done — ' + (p.message || ''); refresh(); }
+        else { prog.className = 's04-runprogress error'; prog.textContent = 'Failed: ' + (p.message || ''); }
+      };
+      setTimeout(poll, 1500);
+    }).catch((err) => { btn.disabled = false; prog.className = 's04-runprogress error'; prog.textContent = err.message; });
+  }
+
+  async function loadDense() {
+    const v = ensureViewer();
+    if (!v.world.userData || !v.world.userData.T) return;
+    const data = await api('/api/stage06/preview?max_points=60000');
+    clearObject(v.dense);
+    const n = data.point_count, T = v.world.userData.T;
+    const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const p = T([data.points[3 * i], data.points[3 * i + 1], data.points[3 * i + 2]]);
+      pos.set(p, 3 * i);
+      col[3 * i] = data.colors[3 * i] / 255; col[3 * i + 1] = data.colors[3 * i + 1] / 255; col[3 * i + 2] = data.colors[3 * i + 2] / 255;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    v.dense = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.03, vertexColors: true, sizeAttenuation: true }));
+    v.world.add(v.dense);
+  }
+
+  async function buildDense() {
+    const btn = $('s04DenseBtn');
+    btn.disabled = true;
+    $('s04ActionInfo').textContent = 'Building dense cloud… (fusing depth maps)';
+    try {
+      const r = await apiSend('/api/stage06/dense', 'POST');
+      $('s04ActionInfo').textContent = `Dense cloud: ${r.points.toLocaleString()} points`;
+      await loadDense();
+      $('s04ShowDense').checked = true;
+      applyToggles();
+      renderDownloads(false);
+    } catch (err) { $('s04ActionInfo').textContent = err.message; }
+    btn.disabled = false;
+  }
+
+  async function georeference() {
+    const btn = $('s04GeorefBtn');
+    btn.disabled = true;
+    $('s04ActionInfo').textContent = 'Georeferencing…';
+    try {
+      const r = await apiSend('/api/stage07/georeference', 'POST');
+      const g = $('s04Georef');
+      g.style.display = 'block';
+      g.className = 's04-georef ' + (r.source === 'real' ? 'ok' : 'sim');
+      g.innerHTML = `<b>Georeferenced &middot; ${r.source} GPS</b> &mdash; scale ${r.scale_units_to_m} m/unit &middot; ` +
+        `RMSE horizontal <b>${r.rmse_horizontal_m} m</b>, vertical <b>${r.rmse_vertical_m} m</b> ` +
+        `(held-out ${r.holdout_frames} of ${r.gps_frames} frames)` +
+        (r.caveat ? `<div class="s04-caveat">${r.caveat}</div>` : '');
+      $('s04ActionInfo').textContent = 'Georeferenced';
+      renderDownloads(true);
+    } catch (err) { $('s04ActionInfo').textContent = err.message; }
+    btn.disabled = false;
+  }
+
+  function renderDownloads(hasGeo) {
+    const d = $('s04Downloads');
+    d.style.display = 'flex';
+    const links = [['Dense cloud (.ply)', '/api/stage06/dense.ply'], ['Point cloud (.las)', '/api/stage06/dense.las']];
+    if (hasGeo) links.push(['Metric cloud (.ply)', '/api/stage07/dense_metric.ply'], ['Flight track (.geojson)', '/api/stage07/track.geojson']);
+    d.replaceChildren(...links.map(([label, href]) => { const a = el('a', 'outline-btn sm-btn s04-link-btn', label); a.href = href; a.setAttribute('download', ''); return a; }));
+  }
+
   // ---------------------------------------------------------------- wiring --------------------
   $('s04ExportBtn').addEventListener('click', exportPackage);
+  $('s04RunBtn').addEventListener('click', runLocal);
+  $('s04DenseBtn').addEventListener('click', buildDense);
+  $('s04GeorefBtn').addEventListener('click', georeference);
   $('s04ImportBtn').addEventListener('click', () => $('s04ImportInput').click());
   $('s04ImportInput').addEventListener('change', (e) => {
     importResults(e.target.files && e.target.files[0]);
     e.target.value = '';
   });
   $('s04DepthSlider').addEventListener('input', (e) => showDepth(parseInt(e.target.value, 10)));
-  ['s04ShowPoints', 's04ShowCameras', 's04ShowPath'].forEach((id) => $(id).addEventListener('change', applyToggles));
+  ['s04ShowPoints', 's04ShowCameras', 's04ShowPath', 's04ShowDense'].forEach((id) => $(id).addEventListener('change', applyToggles));
   window.addEventListener('resize', () => { if (state.visible) resizeViewer(); });
 
   function setVisible(on) {
