@@ -642,10 +642,20 @@ function render2DCameraTrajectory(trajectory, successful, failed) {
     failed_frames: failed
   };
 
-  // High-DPI Responsive Canvas Resolution
+  // High-DPI Responsive Canvas Resolution.
+  // NOTE: the canvas MUST have a CSS width (width:100%) so its layout size is
+  // decoupled from the `width` backing-store attribute. Otherwise the attribute
+  // width becomes the layout width, grows the container, and the next render
+  // measures the bigger container -> runaway feedback loop (page hits ~9000px).
   const container = canvas.parentElement;
-  const dpr = window.devicePixelRatio || 1;
-  const displayW = container ? Math.max(600, container.clientWidth - 32) : 1100;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.style.display = 'block';
+  canvas.style.width = '100%';
+  canvas.style.height = '520px';
+  canvas.style.maxWidth = '100%';
+  // Hard clamp so a bad measurement can never blow out the layout again.
+  const rawW = container ? container.clientWidth - 32 : 1100;
+  const displayW = Math.max(320, Math.min(rawW, 1600));
   const displayH = 520;
 
   canvas.width = displayW * dpr;
@@ -2011,12 +2021,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // "Georeferencing" and "3D Model Generation" used to open a mock page. The REAL georeferencing,
     // dense map and 3D model/mesh generation all run inside Pose & Depth (Stage 04), so route the
-    // user there — one coherent reconstruction flow instead of a confusing dead-end mock.
+    // user there — one coherent reconstruction flow instead of a confusing dead-end mock. Then jump
+    // straight to the relevant output so the click visibly "does something".
     if (moduleName === 'georeferencing' || moduleName === '3d-generation') {
       log('[WORKFLOW] Georeferencing & 3D model generation run inside Pose & Depth (Stage 04). Opening it.');
       activateSidebarModule('depth-estimation');
+      const targets = moduleName === 'georeferencing'
+        ? ['s04Georef', 's04GeorefBtn']            // georef result, else the button that produces it
+        : ['viewportPanel3d', 's04MeshBtn'];        // 3D viewer, else the mesh button
+      // Let the view switch + Stage 04 render before scrolling.
+      setTimeout(() => revealStage04Target(targets), 450);
       return;
     }
+  }
+
+  // Scroll to the first visible target in the list and flash it, so routing to Pose & Depth
+  // clearly lands the user on the georeferencing / 3D-model output they clicked for.
+  function revealStage04Target(ids) {
+    let el = null;
+    for (const id of ids) {
+      const cand = document.getElementById(id) || document.querySelector('.' + id);
+      if (cand && cand.offsetParent !== null) { el = cand; break; }
+    }
+    if (!el) el = document.getElementById('stage04Section');
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('workflow-flash');
+    setTimeout(() => el.classList.remove('workflow-flash'), 1600);
   }
 
   workflowNavBtns.forEach(btn => {
@@ -2859,8 +2890,27 @@ document.addEventListener('DOMContentLoaded', () => {
           const numInput = document.getElementById('selectedKeyframeNumberInput');
           const totalCountEl = document.getElementById('keyframeTotalCount');
           const origTotalEl = document.getElementById('keyframeOrigTotal');
-          if (slider) { slider.min = 0; slider.max = maxIdx; }
-          if (numInput) { numInput.min = 0; numInput.max = maxIdx; }
+          // Wire the scrub controls here (idempotent .oninput/.onchange) so scrubbing always works
+          // once keyframes are loaded, regardless of init timing.
+          if (slider) {
+            slider.min = 0; slider.max = maxIdx; slider.value = 0;
+            slider.oninput = (e) => {
+              const i = parseInt(e.target.value, 10) || 0;
+              if (numInput) numInput.value = i;
+              show_selected_keyframe(i);
+            };
+          }
+          if (numInput) {
+            numInput.min = 0; numInput.max = maxIdx; numInput.value = 0;
+            numInput.onchange = (e) => {
+              let i = parseInt(e.target.value, 10);
+              if (isNaN(i)) i = 0;
+              i = Math.max(0, Math.min(i, maxIdx));
+              numInput.value = i;
+              if (slider) slider.value = i;
+              show_selected_keyframe(i);
+            };
+          }
           if (totalCountEl) totalCountEl.textContent = selectedFramesList.length;
           if (origTotalEl) origTotalEl.textContent = data.total_frames || colabState.totalFrames || '--';
           show_selected_keyframe(0);
