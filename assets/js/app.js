@@ -1,14 +1,16 @@
 // Aero3D OnePass - Pipeline & 3D Interactive Controller
 
+// Generic stage descriptions (no fabricated numbers). Real per-run numbers are logged live by the
+// pipeline and shown on the Pose & Depth page.
 const logs = [
-  '[01 INGEST] Demuxing 4K video frames · Extracting metadata & telemetry',
-  '[02 PREPROCESS] Extracted 42 candidate keyframes · Applied Laplacian deblurring',
-  '[03 PURGING] AI Dynamic Object Masking · Purged 14 transient objects & vehicles',
-  '[04 POSE+DEPTH] Depth Anything V2 · FP16 metric depth & 6-DoF camera pose solved',
-  '[05 FUSION] Sensor Fusion · Synchronized RTK GNSS, IMU vectors, and optical depth',
-  '[06 RECON] Dense 3D Point Cloud fused · Screened Poisson surface mesh generated',
-  '[07 GEOREF] Aligning coordinate frame to WGS84 / UTM Zone 43N (RMSE: 1.4 cm)',
-  '[08 VALIDATE] Quality Assurance passed · 4 Deliverables (.GLB, .LAS, .OBJ, .GeoTIFF) ready'
+  '[01 INGEST] Reading video · extracting frames & metadata',
+  '[02 PREPROCESS] Scoring frame sharpness · selecting overlapping keyframes',
+  '[03 MASKING] Detecting & masking dynamic objects (people / vehicles)',
+  '[04 POSE+DEPTH] COLMAP camera pose · Depth Anything V2 depth',
+  '[05 FUSION] Back-projecting depth into a dense point cloud',
+  '[06 RECON] Dense point cloud · surface mesh',
+  '[07 GEOREF] Aligning to GPS for metric scale',
+  '[08 EXPORT] Preparing deliverables (PLY / LAS / OBJ / GLB / GeoJSON)'
 ];
 
 const phaseLabels = [
@@ -1574,13 +1576,6 @@ function drawSynthesizedDroneSurveyFrame(ctx, w, h, timeSec = 0) {
   ctx.lineWidth = 2;
   ctx.strokeRect(w * 0.45, h * 0.35, 110, 75);
 
-  ctx.fillStyle = '#ff6b00';
-  ctx.font = 'bold 11px monospace';
-  ctx.fillText('SURVEY ZONE A', w * 0.45 + 10, h * 0.35 + 25);
-  ctx.fillStyle = '#0f172a';
-  ctx.font = '10px monospace';
-  ctx.fillText('ALT: 124m AGL', w * 0.45 + 10, h * 0.35 + 42);
-  ctx.fillText('GSD: 1.4 cm/px', w * 0.45 + 10, h * 0.35 + 58);
 
   // Drone HUD reticle in center
   ctx.strokeStyle = '#10b981';
@@ -1923,9 +1918,11 @@ document.addEventListener('DOMContentLoaded', () => {
       appShell.setAttribute('data-active-view', moduleName);
     }
 
-    // Default hide all modular sections
+    // Default hide all modular sections. Note: two legacy elements share id="workspaceGrid",
+    // so hide EVERY .workspace-grid (getElementById would only catch the first, leaking the mock
+    // onto the Upload / Video Processing pages).
     if (phaseStrip) phaseStrip.style.display = 'none';
-    if (workspaceGrid) workspaceGrid.style.display = 'none';
+    document.querySelectorAll('#workspaceGrid, .workspace-grid').forEach(el => { el.style.display = 'none'; });
     if (projectsSection) projectsSection.style.display = 'none';
     if (uploadVideoSection) uploadVideoSection.style.display = 'none';
     if (dedicatedTrajectorySection) dedicatedTrajectorySection.style.display = 'none';
@@ -2646,22 +2643,12 @@ document.addEventListener('DOMContentLoaded', () => {
       console.warn('[OPENCV] Error loading keyframes from server:', e);
     }
 
-    // Fallback if network issue
-    const fallbackCount = 10;
-    const step = Math.floor(colabState.totalFrames / fallbackCount);
-    const synthKeyframes = [];
-    for (let i = 0; i < fallbackCount; i++) {
-      const fIdx = Math.min(colabState.totalFrames - 1, i * step);
-      synthKeyframes.push({
-        frame_number: fIdx + 1,
-        frame_index: fIdx,
-        timestamp_sec: parseFloat((fIdx / colabState.fps).toFixed(2)),
-        sharpness: parseFloat((110 + (Math.sin(i) * 15)).toFixed(2)),
-        image_url: `/api/video/frame_image?frame=${fIdx}&width=360`
-      });
-    }
-    colabState.keyframes = synthKeyframes;
-    renderKeyframesFilmstrip(synthKeyframes);
+    // Network/API error: show nothing rather than fabricating keyframes/sharpness.
+    colabState.keyframes = [];
+    renderKeyframesFilmstrip([]);
+    const badge = document.getElementById('keyframesCountBadge');
+    if (badge) badge.textContent = 'KEYFRAMES UNAVAILABLE';
+    log('[KEYFRAMES] Could not load keyframes from the server. Process a video first, then retry.');
   }
 
   function renderKeyframesFilmstrip(keyframes) {
