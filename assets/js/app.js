@@ -2859,8 +2859,27 @@ document.addEventListener('DOMContentLoaded', () => {
           const numInput = document.getElementById('selectedKeyframeNumberInput');
           const totalCountEl = document.getElementById('keyframeTotalCount');
           const origTotalEl = document.getElementById('keyframeOrigTotal');
-          if (slider) { slider.min = 0; slider.max = maxIdx; }
-          if (numInput) { numInput.min = 0; numInput.max = maxIdx; }
+          // Wire the scrub controls here (idempotent .oninput/.onchange) so scrubbing always works
+          // once keyframes are loaded, regardless of init timing.
+          if (slider) {
+            slider.min = 0; slider.max = maxIdx; slider.value = 0;
+            slider.oninput = (e) => {
+              const i = parseInt(e.target.value, 10) || 0;
+              if (numInput) numInput.value = i;
+              show_selected_keyframe(i);
+            };
+          }
+          if (numInput) {
+            numInput.min = 0; numInput.max = maxIdx; numInput.value = 0;
+            numInput.onchange = (e) => {
+              let i = parseInt(e.target.value, 10);
+              if (isNaN(i)) i = 0;
+              i = Math.max(0, Math.min(i, maxIdx));
+              numInput.value = i;
+              if (slider) slider.value = i;
+              show_selected_keyframe(i);
+            };
+          }
           if (totalCountEl) totalCountEl.textContent = selectedFramesList.length;
           if (origTotalEl) origTotalEl.textContent = data.total_frames || colabState.totalFrames || '--';
           show_selected_keyframe(0);

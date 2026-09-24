@@ -514,8 +514,11 @@
                 </div>
               </div>
 
-              <!-- Hidden filmstrip row container for JS compatibility -->
-              <div id="keyframesFilmstrip" style="display: none !important;"></div>
+              <!-- Extracted keyframes strip: click any frame to inspect it (and its metadata) above -->
+              <div style="margin-top: 18px; font-family: var(--font-heading); font-weight: 800; font-size: 13px; color: var(--ink-black);">
+                Extracted keyframes <span style="color: var(--ink-muted); font-weight: 600;">&mdash; click any frame to inspect it above</span>
+              </div>
+              <div id="keyframesFilmstrip" style="display: flex; gap: 10px; overflow-x: auto; padding: 12px 2px; margin-top: 8px;"></div>
 
             </div>
           </section>
