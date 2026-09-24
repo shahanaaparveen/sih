@@ -182,11 +182,34 @@ def _read_json(path: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _robust_rmtree(path: str) -> None:
+    """rmtree that survives Windows file locks / leftovers: chmod+retry, then rename out of the way."""
+    import stat
+    if not os.path.exists(path):
+        return
+
+    def _onerror(func, p, exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+    for _ in range(5):
+        shutil.rmtree(path, onerror=_onerror)
+        if not os.path.exists(path):
+            return
+        time.sleep(0.3)
+    try:                                    # last resort so a stuck dir never blocks the next import
+        os.rename(path, f"{path}.stale_{int(time.time())}")
+    except OSError:
+        pass
+
+
 def import_results(stage_dir: str, expected_slug: str, expected_keyframes: int, zip_path: str) -> Dict[str, Any]:
     os.makedirs(stage_dir, exist_ok=True)
     staging = os.path.join(stage_dir, "results_incoming")
-    shutil.rmtree(staging, ignore_errors=True)
-    os.makedirs(staging)
+    _robust_rmtree(staging)
+    os.makedirs(staging, exist_ok=True)
     try:
         try:
             _safe_extract(zip_path, staging)
@@ -219,10 +242,22 @@ def import_results(stage_dir: str, expected_slug: str, expected_keyframes: int, 
             raise ValueError("The reconstruction contains no registered images.")
 
         final = os.path.join(stage_dir, "results")
-        shutil.rmtree(final, ignore_errors=True)
-        shutil.move(base, final)
+        _robust_rmtree(final)
+        os.makedirs(final, exist_ok=True)
+        # base may equal `staging` (flat zip) — move each item IN, never a dir into an existing dir
+        for name in os.listdir(base):
+            src = os.path.join(base, name)
+            dst = os.path.join(final, name)
+            if os.path.isdir(dst):
+                _robust_rmtree(dst)
+            elif os.path.exists(dst):
+                try:
+                    os.remove(dst)
+                except OSError:
+                    pass
+            shutil.move(src, dst)
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        _robust_rmtree(staging)
 
     summary = summarize(os.path.join(final, "model"), model, manifest, expected_keyframes)
     summary["warnings"] = warnings + summary["warnings"]
