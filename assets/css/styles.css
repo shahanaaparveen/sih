@@ -3066,3 +3066,46 @@ input:checked + .slider-toggle:before {
    hidden so it can never leak onto the Upload / Video Processing pages (duplicate id made JS hiding
    unreliable). */
 #workspaceGrid, .workspace-grid { display: none !important; }
+
+/* ==========================================================================
+   Layout-overflow guard (fixes the ~9000px runaway page).
+   The trajectory canvas is a replaced element: without an explicit CSS width
+   its `width` backing-store attribute becomes its layout width and expands the
+   grid track without bound. Cap it to the container, and let every grid/flex
+   ancestor shrink below its content (min-width:0) so a wide child can never
+   push the shell past the viewport.
+   ========================================================================== */
+.dashboard-main-area,
+.dashboard-active-project-card,
+.dedicated-trajectory-section,
+.dashboard-keyframes-section,
+.trajectory-main-panel,
+.keyframe-main-panel,
+.keyframe-viewer-panel { min-width: 0 !important; max-width: 100% !important; }
+
+#trajectory2dCanvas {
+  display: block;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 520px;
+  box-sizing: border-box;
+}
+
+#selectedKeyframeImage {
+  max-width: 100% !important;
+  height: auto !important;
+  object-fit: contain;
+}
+
+html, body { overflow-x: hidden; }
+
+/* Flash pulse when a nav button routes the user to its output section in Stage 04. */
+@keyframes workflowFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 122, 0, 0.0); }
+  20%  { box-shadow: 0 0 0 4px rgba(255, 122, 0, 0.85); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 122, 0, 0.0); }
+}
+.workflow-flash {
+  animation: workflowFlash 1.5s ease-out 1;
+  border-radius: var(--radius-main, 10px);
+}
