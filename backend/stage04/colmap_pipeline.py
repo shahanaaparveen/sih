@@ -27,9 +27,9 @@ import time
 
 import pycolmap
 
-# Below this many images, all pairs are matched (most accurate). Above it, video-style
-# sequential matching keeps the run time sane.
-EXHAUSTIVE_MAX_IMAGES = 300
+# Below this many images, all pairs are matched. For video sequences with > 20
+# images, sequential matching keeps run times fast and avoids O(N^2) pairing hangs.
+EXHAUSTIVE_MAX_IMAGES = 20
 
 
 def parse_args():
@@ -39,9 +39,11 @@ def parse_args():
     p.add_argument("--camera-model", default="SIMPLE_RADIAL",
                    help="SIMPLE_RADIAL (default, robust) | OPENCV (more distortion terms, needs many well-spread views) | PINHOLE ...")
     p.add_argument("--matcher", default="auto", choices=["auto", "exhaustive", "sequential"])
-    p.add_argument("--sequential-overlap", type=int, default=25)
-    p.add_argument("--max-image-size", type=int, default=3200, help="longest side used for SIFT (px)")
-    p.add_argument("--max-features", type=int, default=8192)
+    p.add_argument("--sequential-overlap", type=int, default=10,
+                   help="number of consecutive neighbours to match (default 10)")
+    p.add_argument("--max-image-size", type=int, default=1600, help="longest side used for SIFT (px, default 1600)")
+    p.add_argument("--max-features", type=int, default=3072,
+                   help="maximum SIFT features extracted per image (default 3072 for CPU speed; 8192 on GPU)")
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
     p.add_argument("--num-threads", type=int, default=-1,
                    help="CPU threads for COLMAP (-1 = all cores). Each SIFT thread decodes an image at the same time, "
@@ -58,6 +60,40 @@ def frame_of(name):
     """Video frame a package image came from ('keyframe_0007_original_0123.jpg' -> 123), or None."""
     m = re.search(r"original_(\d+)", os.path.basename(name))
     return int(m.group(1)) if m else None
+
+
+def generate_sequential_pairs(names, overlap=10, quadratic=True):
+    """
+    Generate sequential image pairs in video timeline order.
+    Sorts by video frame index ('original_XXXX') so keyframes and gap-fill frames
+    are paired chronologically, with quadratic steps for broad baseline / loop closure.
+    """
+    ordered = sorted(names, key=lambda n: (frame_of(n) if frame_of(n) is not None else 0, n))
+    pairs = []
+    seen = set()
+    n_imgs = len(ordered)
+    overlap = max(1, min(overlap, n_imgs - 1))
+
+    for i, name1 in enumerate(ordered):
+        # Linear neighbour pairs within overlap window
+        for j in range(i + 1, min(i + overlap + 1, n_imgs)):
+            pair = (name1, ordered[j])
+            if pair not in seen:
+                seen.add(pair)
+                pairs.append(pair)
+        # Quadratic step powers of 2 for loop closure / broad baseline
+        if quadratic:
+            step = 2
+            while True:
+                k = i + step
+                if k >= n_imgs:
+                    break
+                pair = (name1, ordered[k])
+                if pair not in seen:
+                    seen.add(pair)
+                    pairs.append(pair)
+                step *= 2
+    return pairs
 
 
 def describe_models(recs):
@@ -129,11 +165,15 @@ def main():
         if matcher == "exhaustive":
             timed("exhaustive matching", timings, pycolmap.match_exhaustive, db, matching_options=matching, device=device)
         else:
-            pairing = pycolmap.SequentialPairingOptions()
-            pairing.overlap = args.sequential_overlap
-            pairing.quadratic_overlap = True
-            pairing.num_threads = args.num_threads
-            timed("sequential matching", timings, pycolmap.match_sequential, db,
+            pairs = generate_sequential_pairs(names, overlap=args.sequential_overlap, quadratic=True)
+            pairs_file = os.path.join(out, "sequential_pairs.txt")
+            with open(pairs_file, "w", encoding="utf-8") as pf:
+                for n1, n2 in pairs:
+                    pf.write(f"{n1} {n2}\n")
+            pairing = pycolmap.ImportedPairingOptions()
+            pairing.match_list_path = pairs_file
+            print(f"[colmap] sequential matching: {len(pairs)} pairs for {len(names)} images (overlap={args.sequential_overlap}, quadratic=True)", flush=True)
+            timed("sequential matching", timings, pycolmap.match_image_pairs, db,
                   matching_options=matching, pairing_options=pairing, device=device)
 
         opts = pycolmap.IncrementalPipelineOptions()

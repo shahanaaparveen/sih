@@ -36,7 +36,7 @@ def main():
     ap.add_argument("--clip", default=None, help="video path (default: first uploads/*.mp4)")
     ap.add_argument("--mode", default="sfm_light", choices=["sfm", "sfm_light", "notebook"])
     ap.add_argument("--budget", type=int, default=120, help="MAX_FRAMES_ON_DISK for this run")
-    ap.add_argument("--matcher", default="exhaustive", choices=["auto", "exhaustive", "sequential"])
+    ap.add_argument("--matcher", default="sequential", choices=["auto", "exhaustive", "sequential"])
     ap.add_argument("--out", default=os.path.join(ROOT, "benchmark.json"))
     args = ap.parse_args()
 
