@@ -1056,7 +1056,7 @@ def stage04_depth_info(frame_index: int, project: Optional[str] = None):
 
 @app.post("/api/stage04/run")
 def stage04_run(project: Optional[str] = None, device: str = "cpu", matcher: str = "auto",
-                run_depth: bool = True, num_threads: int = 4):
+                run_depth: bool = True, num_threads: int = 4, max_features: int = 3072):
     """Runs pose (COLMAP) + optional depth locally in a background thread. No Colab round-trip.
     Poll /api/stage04/run_progress; when COMPLETED, read results via /api/stage04/status|scene|depth."""
     results, slug = _resolve_project(project)
@@ -1071,7 +1071,8 @@ def stage04_run(project: Optional[str] = None, device: str = "cpu", matcher: str
         try:
             summary = sfm_local.run_local_stage04(
                 results, _project_keyframes_dir(slug), _project_frames_dir(slug), _stage04_dir(slug), slug,
-                device=device, matcher=matcher, run_depth=run_depth, num_threads=(num_threads or None), progress=_cb)
+                device=device, matcher=matcher, run_depth=run_depth, num_threads=(num_threads or None),
+                max_features=max_features, progress=_cb)
             stage04_progress.update({"status": "COMPLETED", "stage": "done",
                                      "message": f"verdict={summary.get('verdict')}"})
         except Exception as e:

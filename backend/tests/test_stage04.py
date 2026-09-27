@@ -204,5 +204,38 @@ class ImportSafetyTests(unittest.TestCase):
                 stage04.import_results(os.path.join(d, "s"), "p", 1, empty)
 
 
+class SequentialPairTests(unittest.TestCase):
+    def test_interlaces_gap_fill_frames_in_timeline_order(self):
+        from stage04.colmap_pipeline import generate_sequential_pairs
+        # fill_0000 starts with 'f' so it comes alphabetically before 'keyframe_'
+        # but its original video frame is 15 (between frame 0 and frame 30).
+        names = [
+            "fill_0000_original_0015.jpg",
+            "keyframe_0000_original_0000.jpg",
+            "keyframe_0001_original_0030.jpg",
+            "keyframe_0002_original_0045.jpg",
+        ]
+        pairs = generate_sequential_pairs(names, overlap=1, quadratic=False)
+        expected = [
+            ("keyframe_0000_original_0000.jpg", "fill_0000_original_0015.jpg"),
+            ("fill_0000_original_0015.jpg", "keyframe_0001_original_0030.jpg"),
+            ("keyframe_0001_original_0030.jpg", "keyframe_0002_original_0045.jpg"),
+        ]
+        self.assertEqual(pairs, expected)
+
+    def test_includes_quadratic_loop_closure_steps_without_duplicates(self):
+        from stage04.colmap_pipeline import generate_sequential_pairs
+        names = [f"keyframe_{i:04d}_original_{i * 10:04d}.jpg" for i in range(16)]
+        pairs = generate_sequential_pairs(names, overlap=2, quadratic=True)
+        # Verify no duplicate pairs
+        self.assertEqual(len(pairs), len(set(pairs)))
+        # Frame 0 should pair with linear (1, 2) and quadratic steps (4, 8)
+        frame0_partners = [p[1] for p in pairs if p[0] == "keyframe_0000_original_0000.jpg"]
+        self.assertIn("keyframe_0001_original_0010.jpg", frame0_partners)
+        self.assertIn("keyframe_0002_original_0020.jpg", frame0_partners)
+        self.assertIn("keyframe_0004_original_0040.jpg", frame0_partners)
+        self.assertIn("keyframe_0008_original_0080.jpg", frame0_partners)
+
+
 if __name__ == "__main__":
     unittest.main()

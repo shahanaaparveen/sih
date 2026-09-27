@@ -74,6 +74,7 @@ def _zip_results(pkg_dir: str, out_zip: str) -> None:
 def run_local_stage04(results: Dict[str, Any], keyframes_dir: str, frames_dir: str, stage_dir: str,
                       slug: str, device: str = "cpu", matcher: str = "auto",
                       depth_model: Optional[str] = None, max_image_size: int = 1600,
+                      max_features: int = 3072, sequential_overlap: int = 10,
                       num_threads: Optional[int] = None, run_depth: bool = True,
                       run_masking: Optional[bool] = None, progress: ProgressCB = None) -> Dict[str, Any]:
     """
@@ -114,7 +115,9 @@ def run_local_stage04(results: Dict[str, Any], keyframes_dir: str, frames_dir: s
 
         # 2b. Camera pose + sparse cloud (COLMAP), masking out dynamic pixels if available.
         colmap_args = ["--images", images, "--out", out_dir, "--device", device, "--matcher", matcher,
-                       "--max-image-size", str(max_image_size)]
+                       "--max-image-size", str(max_image_size),
+                       "--max-features", str(max_features),
+                       "--sequential-overlap", str(sequential_overlap)]
         if masks_dir:
             colmap_args += ["--masks", masks_dir]
         if num_threads:
